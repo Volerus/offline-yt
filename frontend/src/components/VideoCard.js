@@ -48,31 +48,25 @@ const VideoCard = ({ video }) => {
     handleCloseMenu();
   };
   
-  // Format video duration
   const formatDuration = (seconds) => {
     if (!seconds) return '--:--';
-    
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainingSeconds = seconds % 60;
     
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    }
-    
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    return hours > 0 
+      ? `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+      : `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
-  
-  // Format publish date
+
   const formatPublishDate = (dateString) => {
     try {
-      const date = new Date(dateString);
-      return formatDistanceToNow(date, { addSuffix: true });
+      return formatDistanceToNow(new Date(dateString), { addSuffix: true });
     } catch (error) {
       return 'Unknown date';
     }
   };
-  
+
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardMedia
@@ -81,7 +75,7 @@ const VideoCard = ({ video }) => {
         image={video.thumbnail_url || 'https://via.placeholder.com/320x180?text=No+Thumbnail'}
         alt={video.title}
       />
-      
+
       {isDownloading && (
         <LinearProgress 
           variant="determinate" 
@@ -89,12 +83,12 @@ const VideoCard = ({ video }) => {
           sx={{ height: 5 }}
         />
       )}
-      
+
       <CardContent sx={{ flexGrow: 1 }}>
-        <Typography gutterBottom variant="h6" component="div" noWrap title={video.title}>
+        <Typography gutterBottom variant="h6" component="div" noWrap>
           {video.title}
         </Typography>
-        
+
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
           <Typography variant="body2" color="text.secondary">
             {formatDuration(video.duration)}
@@ -103,22 +97,18 @@ const VideoCard = ({ video }) => {
             {formatPublishDate(video.published_at)}
           </Typography>
         </Box>
-        
-        <Typography 
-          variant="body2" 
-          color="text.secondary"
-          sx={{
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
+
+        <Typography variant="body2" color="text.secondary" sx={{
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
           {video.description || 'No description available'}
         </Typography>
       </CardContent>
-      
+
       <CardActions>
         {video.is_downloaded ? (
           <Button 
@@ -130,22 +120,28 @@ const VideoCard = ({ video }) => {
             Downloaded ({video.downloaded_resolution})
           </Button>
         ) : isDownloading ? (
-          <Button 
-            disabled 
-            fullWidth
-          >
+          <Button disabled fullWidth>
             Downloading... {Math.round(progress * 100)}%
           </Button>
         ) : (
           <>
-            <Button
-              startIcon={<CloudDownloadIcon />}
-              onClick={handleOpenMenu}
-              color="primary"
-              fullWidth
-            >
-              Download
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={() => window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank')}
+              >
+                Open Video
+              </Button>
+              <Button
+                startIcon={<CloudDownloadIcon />}
+                onClick={handleOpenMenu}
+                color="primary"
+                sx={{ flexGrow: 1 }}
+              >
+                Download
+              </Button>
+            </Box>
             <Menu
               anchorEl={anchorEl}
               open={open}
@@ -168,4 +164,4 @@ const VideoCard = ({ video }) => {
   );
 };
 
-export default VideoCard; 
+export default VideoCard;

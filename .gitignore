@@ -186,3 +186,4 @@ data/offline_yt.db
 # Environment files
 .env
 .env.local
+cookies.txt
