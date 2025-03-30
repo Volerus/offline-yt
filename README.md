@@ -266,3 +266,16 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Material-UI](https://mui.com/)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - [SQLAlchemy](https://www.sqlalchemy.org/) 
+
+
+## TODO
+
+- Adding channels through user subscriptions
+- Clean up UI
+- Clean DB to allow new videos
+- Optimization on fetch videos and channels
+- Interested vs non interested list (Remove the non interested list)
+- Option in settings to disable download
+- Repackage into an offline mac app/win app
+- Repackage into ios/android app
+- Maybe host a backend locally and have frontend app with connection

@@ -184,7 +184,7 @@ class YouTubeService:
             
             # Determine URL format based on channel_id
             if channel_id.startswith('@'):
-                url = f"https://www.youtube.com/{channel_id}"
+                url = f"https://www.youtube.com/@{channel_id}"
             elif channel_id.startswith('UC'):
                 url = f"https://www.youtube.com/channel/{channel_id}"
             else:
