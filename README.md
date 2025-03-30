@@ -270,7 +270,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## TODO
 
-- Adding channels through user subscriptions
 - Clean up UI
 - Clean DB to allow new videos
 - Optimization on fetch videos and channels
@@ -279,3 +278,146 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Repackage into an offline mac app/win app
 - Repackage into ios/android app
 - Maybe host a backend locally and have frontend app with connection
+
+## macOS Application Packaging Roadmap
+
+### Approaches for macOS Packaging
+
+#### 1. Using Electron (Recommended for Desktop Apps)
+
+[Electron](https://www.electronjs.org/) is a popular framework for creating cross-platform desktop applications using web technologies.
+
+**Implementation Steps:**
+
+1. Create an Electron wrapper for your application
+2. Configure the main process to start the FastAPI backend
+3. Bundle the React frontend with the Electron app
+4. Package the application using electron-builder
+
+#### 2. Using py2app (Python-Focused Approach)
+
+[py2app](https://py2app.readthedocs.io/en/latest/) is a tool for creating standalone macOS applications from Python scripts.
+
+**Implementation Steps:**
+
+1. Create a launcher script that starts the FastAPI server
+2. Configure py2app to include all necessary dependencies
+3. Bundle the React frontend with the application
+4. Package using py2app
+
+#### 3. Commercial Option: Platypus
+
+[Platypus](https://sveinbjorn.org/platypus) is a macOS application that creates native macOS applications from scripts.
+
+### Implementation Roadmap
+
+1. Complete existing TODO items, especially "Clean up UI" and "Optimization on fetch videos and channels"
+2. Choose the packaging approach (Electron recommended for better user experience)
+3. Configure the application to work properly in a bundled environment:
+   - Update file paths to be relative to the application bundle
+   - Handle database location correctly
+   - Ensure the application can start/stop the backend server properly
+4. Test extensively on macOS to ensure all features work as expected
+5. Add macOS-specific enhancements like dock menu, TouchBar support, or native notifications
+
+### Considerations for macOS App Distribution
+
+1. **Code Signing**: Requires an Apple Developer account ($99/year) for code signing your application
+2. **App Notarization**: Required for running without security warnings on recent macOS versions
+3. **Database Location**: Update application to use a database location within the macOS app sandbox
+4. **Updates**: Implement an update mechanism for the application
+
+## Local Server Hosting Roadmap
+
+This section outlines how to set up the application to be hosted on a local server, allowing access from multiple devices on your network.
+
+### Implementation Approach
+
+#### Server-side Setup
+
+1. **Configure for Network Access**
+   - Update the FastAPI server to listen on all network interfaces (not just localhost)
+   - Implement proper authentication for network access
+   - Configure CORS settings to allow connections from specific devices/IPs
+
+2. **Deployment Options**
+   - **Option A: Direct FastAPI Deployment**
+     - Run FastAPI with uvicorn directly on a server machine
+     - Configure as a system service for automatic startup
+   
+   - **Option B: Docker Containerization**
+     - Create Docker container for the application
+     - Use docker-compose for managing backend and database
+     - Simplifies deployment and environment consistency
+
+   - **Option C: Reverse Proxy Setup**
+     - Deploy behind Nginx or Caddy as a reverse proxy
+     - Enables HTTPS, load balancing, and better security
+     - Allows hosting multiple applications on the same server
+
+3. **Database Considerations**
+   - Configure a persistent database location
+   - Implement regular backups
+   - Consider SQLite for simplicity or PostgreSQL for more concurrent users
+
+#### Client-side Access
+
+1. **Web Browser Access**
+   - Access via web browser using local IP or hostname
+   - Mobile-responsive design for phone/tablet access
+   - Consider PWA (Progressive Web App) capabilities for offline functionality
+
+2. **Local DNS Setup (Optional)**
+   - Configure local DNS for friendly names (e.g., ytoffline.local)
+   - Use Multicast DNS (mDNS) for automatic discovery
+
+### Implementation Steps
+
+1. **Update Server Configuration**
+   ```python
+   # In app/main.py
+   # Update CORS settings
+   app.add_middleware(
+       CORSMiddleware,
+       allow_origins=["*"],  # Or specific allowed origins
+       allow_credentials=True,
+       allow_methods=["*"],
+       allow_headers=["*"],
+   )
+   
+   # In run.py or when starting uvicorn
+   uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
+   ```
+
+2. **Create Systemd Service (Linux)**
+   ```ini
+   # /etc/systemd/system/ytoffline.service
+   [Unit]
+   Description=Offline YouTube Video Manager
+   After=network.target
+   
+   [Service]
+   User=your_username
+   WorkingDirectory=/path/to/application
+   ExecStart=/path/to/venv/bin/python run.py
+   Restart=on-failure
+   
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. **Docker Setup (Alternative)**
+   - Create Dockerfile and docker-compose.yml for containerization
+   - Include volume mappings for persistent data (downloads and database)
+
+4. **Security Considerations**
+   - Implement authentication for all API endpoints
+   - Use HTTPS even for local network (self-signed certificates)
+   - Configure firewall to restrict access to authorized devices
+
+### Testing and Validation
+
+1. Test access from different devices on the local network
+2. Verify downloads work correctly with server-based storage
+3. Measure performance with multiple simultaneous users
+4. Test automatic recovery after server restart
