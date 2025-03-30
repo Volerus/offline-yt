@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 
@@ -71,7 +71,15 @@ class DownloadRequest(BaseModel):
 
 # Fetch videos request schema
 class FetchVideosRequest(BaseModel):
-    channel_id: str
+    channel_id: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    days: Optional[int] = None 
+    days: Optional[int] = None
+    fetch_all_channels: bool = False
+    
+    @validator('channel_id')
+    def validate_channel_id(cls, v, values):
+        # If fetch_all_channels is False and channel_id is None or empty, raise an error
+        if 'fetch_all_channels' in values and not values['fetch_all_channels'] and (v is None or v == ''):
+            raise ValueError('channel_id is required when fetch_all_channels is False')
+        return v 

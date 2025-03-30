@@ -38,6 +38,7 @@ const TimeframeSelector = ({ onTimeframeChange, isLoading }) => {
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fetchAllChannels, setFetchAllChannels] = useState(false);
   
   // Fetch channels when component mounts
   useEffect(() => {
@@ -101,16 +102,17 @@ const TimeframeSelector = ({ onTimeframeChange, isLoading }) => {
   };
   
   const handleFetchVideos = () => {
-    if (!selectedChannel) {
+    if (!fetchAllChannels && !selectedChannel) {
       return;
     }
     
     // Create request object with required fields
     const timeframeRequest = {
-      channel_id: selectedChannel,
+      channel_id: fetchAllChannels ? "" : selectedChannel,
       start_date: startDate.toISOString(),
       end_date: endDate.toISOString(),
-      days: getDaysFromTimeframe()
+      days: getDaysFromTimeframe(),
+      fetch_all_channels: fetchAllChannels
     };
     
     onTimeframeChange(timeframeRequest);
@@ -128,22 +130,30 @@ const TimeframeSelector = ({ onTimeframeChange, isLoading }) => {
   };
   
   const handleChannelChange = (event) => {
-    setSelectedChannel(event.target.value);
+    const value = event.target.value;
+    if (value === 'all') {
+      setFetchAllChannels(true);
+      setSelectedChannel('');
+    } else {
+      setFetchAllChannels(false);
+      setSelectedChannel(value);
+    }
   };
   
   const handleCustomSubmit = () => {
     setCustomDialogOpen(false);
     
-    if (!selectedChannel) {
+    if (!fetchAllChannels && !selectedChannel) {
       return;
     }
     
     // Create request object with required fields
     const timeframeRequest = {
-      channel_id: selectedChannel,
+      channel_id: fetchAllChannels ? "" : selectedChannel,
       start_date: startDate.toISOString(),
       end_date: endDate.toISOString(),
-      days: getDaysFromTimeframe()
+      days: getDaysFromTimeframe(),
+      fetch_all_channels: fetchAllChannels
     };
     
     onTimeframeChange(timeframeRequest);
@@ -155,11 +165,12 @@ const TimeframeSelector = ({ onTimeframeChange, isLoading }) => {
         <FormControl sx={{ minWidth: 200 }}>
           <InputLabel>Channel</InputLabel>
           <Select
-            value={selectedChannel}
+            value={fetchAllChannels ? 'all' : selectedChannel}
             label="Channel"
             onChange={handleChannelChange}
             disabled={isLoading || loading || channels.length === 0}
           >
+            <MenuItem value="all">All Channels</MenuItem>
             {channels.map((channel) => (
               <MenuItem key={channel.id} value={channel.id}>
                 {channel.title}
@@ -194,7 +205,7 @@ const TimeframeSelector = ({ onTimeframeChange, isLoading }) => {
         <Button 
           variant="contained" 
           onClick={handleFetchVideos}
-          disabled={isLoading || !selectedChannel}
+          disabled={isLoading || (!fetchAllChannels && !selectedChannel)}
         >
           {isLoading ? 'Fetching...' : 'Fetch Videos'}
         </Button>

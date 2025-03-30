@@ -140,8 +140,8 @@ const HomePage = () => {
   const handleTimeframeChange = (newTimeframe) => {
     setTimeframe(newTimeframe);
     setPage(1);
-    // Only call mutation if we have a valid timeframe with channel_id
-    if (newTimeframe && newTimeframe.channel_id) {
+    // Call mutation if we have a valid timeframe with channel_id or fetch_all_channels is true
+    if ((newTimeframe.channel_id || newTimeframe.fetch_all_channels)) {
       fetchMutation.mutate(newTimeframe);
     }
   };
@@ -232,6 +232,11 @@ const HomePage = () => {
         <Alert severity="error" sx={{ mb: 4 }}>
           <AlertTitle>Error</AlertTitle>
           Failed to fetch new videos - {fetchMutation.error?.message || 'Unknown error'}
+          {fetchMutation.error?.data && (
+            <pre style={{ whiteSpace: 'pre-wrap', marginTop: '8px', fontSize: '0.85em' }}>
+              {JSON.stringify(fetchMutation.error.data, null, 2)}
+            </pre>
+          )}
         </Alert>
       )}
       

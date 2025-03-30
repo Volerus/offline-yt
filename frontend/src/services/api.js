@@ -50,7 +50,23 @@ export const fetchVideosByTimeframe = async (timeframe) => {
     return response.data;
   } catch (error) {
     console.error('Error in fetchVideosByTimeframe:', error);
-    throw error;
+    // Extract detailed error message if available
+    const errorMessage = error.response?.data?.detail?.message 
+      || error.response?.data?.detail
+      || error.message 
+      || 'Unknown error';
+    
+    // Create a more informative error with details
+    const enhancedError = new Error(
+      typeof errorMessage === 'object' 
+        ? JSON.stringify(errorMessage) 
+        : errorMessage
+    );
+    enhancedError.originalError = error;
+    enhancedError.status = error.response?.status;
+    enhancedError.data = error.response?.data;
+    
+    throw enhancedError;
   }
 };
 

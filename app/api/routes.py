@@ -175,9 +175,6 @@ async def fetch_videos(
         # Start timing the operation
         start_time = datetime.now()
         
-        # Log the request parameters (minimal logging)
-        logger.info(f"Fetching videos for channel: {request.channel_id} with date range: {request.start_date} to {request.end_date}")
-        
         # Ensure dates are properly formatted
         start_date = request.start_date
         end_date = request.end_date
@@ -191,31 +188,70 @@ async def fetch_videos(
         # Log the final date parameters
         logger.info(f"Final date parameters - start_date: {start_date}, end_date: {end_date}")
         
-        # Fetch videos from YouTube (with date filtering done by yt-dlp)
-        videos = await youtube_service.get_channel_videos(
-            channel_id=request.channel_id,
-            start_date=start_date,
-            end_date=end_date
-        )
+        all_videos = []
         
-        logger.info(f"Found {len(videos)} videos from channel {request.channel_id}")
+        # Check if we need to fetch from all channels
+        if request.fetch_all_channels:
+            # Get all channels
+            logger.info("Fetching videos from all channels")
+            channels = await db_service.get_channels()
+            
+            # Fetch videos from each channel
+            for channel in channels:
+                logger.info(f"Fetching videos for channel: {channel.id}")
+                
+                # Fetch videos from YouTube
+                channel_videos = await youtube_service.get_channel_videos(
+                    channel_id=channel.id,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                
+                logger.info(f"Found {len(channel_videos)} videos from channel {channel.id}")
+                
+                # Process videos for this channel
+                if channel_videos:
+                    # Save channel ID in videos
+                    for video in channel_videos:
+                        video['channel_id'] = channel.id
+                    
+                    all_videos.extend(channel_videos)
+        else:
+            # Ensure channel_id is provided when not fetching all channels
+            if not request.channel_id or request.channel_id == "":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Channel ID is required when not fetching from all channels"
+                )
+                
+            # Log the request parameters (minimal logging)
+            logger.info(f"Fetching videos for channel: {request.channel_id} with date range: {request.start_date} to {request.end_date}")
+            
+            # Fetch videos from YouTube (with date filtering done by yt-dlp)
+            all_videos = await youtube_service.get_channel_videos(
+                channel_id=request.channel_id,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            logger.info(f"Found {len(all_videos)} videos from channel {request.channel_id}")
         
         # If no videos found, return empty list early
-        if not videos:
-            logger.info(f"No videos found for channel {request.channel_id} in the specified date range")
+        if not all_videos:
+            logger.info("No videos found in the specified date range")
             return []
         
         # Prepare bulk operations - gather videos for insert/update
         videos_to_create = []
         videos_to_update = {}
-        video_ids = [v['id'] for v in videos]
+        video_ids = [v['id'] for v in all_videos]
         
         # Get all existing videos in a single database query
         existing_videos = await db_service.get_videos_by_ids(video_ids)
         existing_video_ids = {v.id for v in existing_videos}
         
         # Process all videos at once
-        for video in videos:
+        for video in all_videos:
             if video['id'] in existing_video_ids:
                 # Mark for update
                 videos_to_update[video['id']] = {
@@ -231,7 +267,7 @@ async def fetch_videos(
                 # Mark for creation
                 videos_to_create.append({
                     'id': video['id'],
-                    'channel_id': request.channel_id,
+                    'channel_id': video['channel_id'] if request.fetch_all_channels else request.channel_id,
                     'title': video['title'],
                     'description': video['description'],
                     'published_at': video['published_at'],
@@ -260,7 +296,7 @@ async def fetch_videos(
             detail={
                 "error": "Failed to fetch videos",
                 "message": str(e),
-                "channel_id": request.channel_id
+                "channel_id": request.channel_id if not request.fetch_all_channels else "all channels"
             }
         )
 
