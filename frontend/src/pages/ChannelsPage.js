@@ -9,6 +9,7 @@ import {
   CircularProgress,
   Paper,
   Divider,
+  Grid,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import { getChannels } from '../services/api';
@@ -62,11 +63,15 @@ const ChannelsPage = () => {
           You haven't added any channel subscriptions yet. Add your first channel to get started.
         </Alert>
       ) : (
-        <Paper elevation={0} sx={{ p: 2 }}>
-          {channels.map((channel) => (
-            <ChannelCard key={channel.id} channel={channel} />
-          ))}
-        </Paper>
+        <Box sx={{ p: 2 }}>
+          <Grid container spacing={2} justifyContent="flex-start">
+            {channels.map((channel) => (
+              <Grid item key={channel.id}>
+                <ChannelCard channel={channel} />
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
       )}
       
       <AddChannelDialog

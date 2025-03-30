@@ -13,11 +13,16 @@ import {
   Divider,
   Alert,
   CircularProgress,
+  Tab,
+  Tabs,
+  Card,
+  CardContent,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import BrowserUpdatedIcon from '@mui/icons-material/BrowserUpdated';
 import { useSettings } from '../context/SettingsContext';
-import { uploadCookies, getAuthStatus } from '../services/api';
+import { uploadCookies, getAuthStatus, extractBrowserCookies } from '../services/api';
 
 const resolutionOptions = [
   { label: '360p', value: '360p' },
@@ -25,6 +30,15 @@ const resolutionOptions = [
   { label: '720p', value: '720p' },
   { label: '1080p', value: '1080p' },
   { label: 'Best Quality', value: 'best' },
+];
+
+const browserOptions = [
+  { label: 'Chrome', value: 'chrome' },
+  { label: 'Firefox', value: 'firefox' },
+  { label: 'Edge', value: 'edge' },
+  { label: 'Opera', value: 'opera' },
+  { label: 'Safari', value: 'safari' },
+  { label: 'Chromium', value: 'chromium' },
 ];
 
 const SettingsPage = () => {
@@ -43,6 +57,12 @@ const SettingsPage = () => {
   const [uploadMessage, setUploadMessage] = React.useState('');
   const [uploadError, setUploadError] = React.useState('');
   const [authStatus, setAuthStatus] = React.useState(null);
+  const [cookieMethod, setCookieMethod] = React.useState('file');
+  
+  // Browser cookie extraction
+  const [selectedBrowser, setSelectedBrowser] = React.useState('chrome');
+  const [browserProfile, setBrowserProfile] = React.useState('');
+  const [isExtractingCookies, setIsExtractingCookies] = React.useState(false);
   
   // Update form when settings are loaded
   React.useEffect(() => {
@@ -137,6 +157,32 @@ const SettingsPage = () => {
       setUploadError(error.response?.data?.detail || 'Failed to upload cookies file');
     } finally {
       setIsUploading(false);
+    }
+  };
+  
+  const handleBrowserCookieExtraction = async () => {
+    setIsExtractingCookies(true);
+    setUploadMessage('');
+    setUploadError('');
+    
+    try {
+      const result = await extractBrowserCookies({
+        browser: selectedBrowser,
+        profile: browserProfile.trim() || undefined
+      });
+      
+      if (result.success) {
+        setUploadMessage(result.message || 'Cookies extracted successfully from browser');
+      } else {
+        setUploadError(result.message || 'Failed to extract cookies from browser');
+      }
+      
+      // Refresh auth status
+      fetchAuthStatus();
+    } catch (error) {
+      setUploadError(error.response?.data?.detail || 'Failed to extract cookies from browser');
+    } finally {
+      setIsExtractingCookies(false);
     }
   };
   
@@ -275,42 +321,97 @@ const SettingsPage = () => {
             )}
             
             <Typography variant="body1" gutterBottom>
-              Upload a cookies.txt file to authenticate with YouTube and access protected videos.
+              Authentication is required to access your YouTube subscriptions and protected videos.
             </Typography>
             
-            <Box sx={{ mt: 2 }}>
-              <input
-                accept=".txt"
-                style={{ display: 'none' }}
-                id="cookie-file-input"
-                type="file"
-                onChange={handleFileChange}
-              />
-              <label htmlFor="cookie-file-input">
-                <Button
-                  variant="outlined"
-                  component="span"
-                  startIcon={<UploadFileIcon />}
-                >
-                  Select cookies.txt file
-                </Button>
-              </label>
-              {cookieFile && (
-                <Typography variant="body2" sx={{ mt: 1 }}>
-                  Selected file: {cookieFile.name}
+            <Tabs 
+              value={cookieMethod} 
+              onChange={(e, newValue) => setCookieMethod(newValue)}
+              sx={{ mb: 2 }}
+            >
+              <Tab label="Upload File" value="file" />
+              <Tab label="Extract from Browser" value="browser" />
+            </Tabs>
+            
+            {cookieMethod === 'file' ? (
+              <Box>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                  Upload a cookies.txt file exported from your browser.
                 </Typography>
-              )}
-              
-              <Button
-                onClick={handleFileUpload}
-                variant="contained"
-                color="primary"
-                disabled={!cookieFile || isUploading}
-                sx={{ ml: 2 }}
-              >
-                {isUploading ? 'Uploading...' : 'Upload'}
-              </Button>
-            </Box>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} sm={8}>
+                    <TextField
+                      fullWidth
+                      type="file"
+                      id="cookie-file-input"
+                      onChange={handleFileChange}
+                      inputProps={{
+                        accept: '.txt'
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <Button
+                      variant="contained"
+                      onClick={handleFileUpload}
+                      disabled={isUploading || !cookieFile}
+                      startIcon={<UploadFileIcon />}
+                      fullWidth
+                    >
+                      {isUploading ? 'Uploading...' : 'Upload'}
+                    </Button>
+                  </Grid>
+                </Grid>
+              </Box>
+            ) : (
+              <Box>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                  Extract cookies directly from your browser. Make sure you're logged into YouTube.
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth>
+                      <InputLabel>Browser</InputLabel>
+                      <Select
+                        value={selectedBrowser}
+                        label="Browser"
+                        onChange={(e) => setSelectedBrowser(e.target.value)}
+                      >
+                        {browserOptions.map((option) => (
+                          <MenuItem key={option.value} value={option.value}>
+                            {option.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Profile Name (optional)"
+                      value={browserProfile}
+                      onChange={(e) => setBrowserProfile(e.target.value)}
+                      helperText="Leave empty for default profile"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Button
+                      variant="contained"
+                      onClick={handleBrowserCookieExtraction}
+                      disabled={isExtractingCookies}
+                      startIcon={<BrowserUpdatedIcon />}
+                    >
+                      {isExtractingCookies ? 'Extracting...' : 'Extract Cookies from Browser'}
+                    </Button>
+                  </Grid>
+                </Grid>
+                
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  This will extract YouTube cookies from your local browser. 
+                  Make sure you're logged into YouTube before extracting.
+                </Alert>
+              </Box>
+            )}
             
             {uploadMessage && (
               <Alert severity="success" sx={{ mt: 2 }}>
@@ -324,23 +425,17 @@ const SettingsPage = () => {
               </Alert>
             )}
             
-            <Divider sx={{ my: 2 }} />
-            
-            <Typography variant="h6" gutterBottom>
-              How to get cookies.txt
-            </Typography>
-            
-            <ol>
-              <li>Log in to YouTube in your web browser</li>
-              <li>Install a browser extension like "EditThisCookie" or "Get cookies.txt"</li>
-              <li>Go to youtube.com and use the extension to export cookies as cookies.txt</li>
-              <li>Save the file and upload it here</li>
-            </ol>
-            
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              Your YouTube login credentials are stored in the cookies.txt file.
-              For security, this file is only stored on your local server.
-            </Alert>
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Troubleshooting Tips:
+              </Typography>
+              <ul>
+                <li>Make sure you're logged into YouTube in your browser before extracting cookies</li>
+                <li>Try using a different browser if one method doesn't work</li>
+                <li>Cookies expire over time, so you may need to refresh them occasionally</li>
+                <li>If you're having trouble with subscriptions, ensure you're logged into a YouTube account that has subscriptions</li>
+              </ul>
+            </Box>
           </Grid>
         </Grid>
       </Paper>

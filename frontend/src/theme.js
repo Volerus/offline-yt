@@ -3,16 +3,16 @@ import { createTheme } from '@mui/material/styles';
 // Create a theme instance
 const theme = createTheme({
   palette: {
-    mode: 'light',
+    mode: 'dark',
     primary: {
       main: '#ff0000', // YouTube red
     },
     secondary: {
-      main: '#282828', // YouTube dark
+      main: '#aaaaaa', // Light gray for dark mode
     },
     background: {
-      default: '#f9f9f9',
-      paper: '#ffffff',
+      default: '#121212', // Dark background
+      paper: '#1e1e1e',   // Slightly lighter dark for cards/surfaces
     },
   },
   typography: {
@@ -46,7 +46,7 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 8,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.24)',
         },
       },
     },

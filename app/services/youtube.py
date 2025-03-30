@@ -42,7 +42,7 @@ class YouTubeService:
                 return f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
                 
         except Exception as e:
-            self.logger.error(f"Error constructing thumbnail URL: {str(e)}")
+            logger.error(f"Error constructing thumbnail URL: {str(e)}")
         
         # Fallback to empty string if all methods fail
         return ""
@@ -195,7 +195,7 @@ class YouTubeService:
             # Create optimized options for faster channel info extraction
             channel_opts = {
                 **self.ydl_opts,
-                'extract_flat': False,  # Don't extract full info for each video
+                'extract_flat': False,  # Need full info to extract channel details
                 'playlistend': 1,      # Only need channel info, not all videos
                 'skip_download': True,
                 'quiet': True,         # Reduce console output
@@ -203,25 +203,36 @@ class YouTubeService:
                 'ignoreerrors': True,
                 'no_warnings': True,
                 'socket_timeout': 10,  # Add timeout to prevent hanging
+                'extract_info': True,  # Ensure we extract all available info
+                'writeinfojson': False, # Don't write info to a file
+                'writedescription': False, # Don't write description to a file
+                'writethumbnail': False, # Don't write thumbnail to a file
             }
             
             def extract_info():
                 with yt_dlp.YoutubeDL(channel_opts) as ydl:
-                    return ydl.extract_info(url, download=False, process=False)  # process=False for faster extraction
+                    return ydl.extract_info(url, download=False)  # process=True to get full metadata
             
             info = await loop.run_in_executor(None, extract_info)
             
             if not info:
                 return None
             
+            # Debug: log important parts of the channel info structure
+            self._log_channel_info_structure(info)
+            
             # If the channel_id is a handle (@Username), get the actual YouTube channel ID
             actual_channel_id = info.get('channel_id', channel_id)
             
-            # Use simpler thumbnail URL construction if possible
-            if actual_channel_id.startswith('UC'):
-                thumbnail_url = f"https://i.ytimg.com/vi/{actual_channel_id}/hqdefault.jpg"
-            else:
-                thumbnail_url = info.get('thumbnail', '')
+            # Get the thumbnail URL using our comprehensive extraction method
+            thumbnail_url = self._extract_channel_thumbnail(info)
+            
+            # Last resort fallback if all extraction methods fail
+            if not thumbnail_url and actual_channel_id.startswith('UC'):
+                thumbnail_url = f"https://yt3.googleusercontent.com/channel/{actual_channel_id}"
+                logger.info(f"Using last resort fallback thumbnail URL: {thumbnail_url}")
+            
+            logger.info(f"Channel info extracted for {channel_id}: title={info.get('title', 'Unknown')}, thumbnail_url={thumbnail_url}")
             
             channel_data = {
                 'id': actual_channel_id,
@@ -235,6 +246,101 @@ class YouTubeService:
         except Exception as e:
             logger.error(f"Error fetching channel info for {channel_id}: {str(e)}")
             return None
+    
+    def _log_channel_info_structure(self, info):
+        """Log important parts of the channel info structure for debugging."""
+        try:
+            # Create a simplified structure overview for logging
+            structure = {
+                "keys": list(info.keys()),
+                "has_thumbnails": "thumbnails" in info,
+                "has_thumbnail": "thumbnail" in info,
+                "channel_id": info.get("channel_id", "Not found"),
+                "uploader_id": info.get("uploader_id", "Not found"),
+                "uploader": info.get("uploader", "Not found"),
+            }
+            
+            # Extract thumbnail info if available
+            if "thumbnails" in info and info["thumbnails"]:
+                structure["thumbnails_count"] = len(info["thumbnails"])
+                if len(info["thumbnails"]) > 0:
+                    structure["first_thumbnail"] = info["thumbnails"][0]
+            
+            if "thumbnail" in info:
+                structure["thumbnail_value"] = info["thumbnail"]
+                
+            # Add additional debugging for channel avatar-specific data
+            if "channel" in info:
+                structure["channel_keys"] = list(info["channel"].keys()) if isinstance(info["channel"], dict) else "Not a dict"
+                if isinstance(info["channel"], dict) and "thumbnails" in info["channel"]:
+                    structure["channel_thumbnails"] = info["channel"]["thumbnails"]
+            
+            logger.info(f"Channel info structure: {json.dumps(structure, indent=2)}")
+        except Exception as e:
+            logger.error(f"Error logging channel info structure: {str(e)}")
+    
+    def _extract_channel_thumbnail(self, info):
+        """Extract channel thumbnail URL from various paths in the info structure."""
+        thumbnail_url = ""
+        
+        try:
+            # Method 1: Direct thumbnail field
+            if "thumbnail" in info and info["thumbnail"]:
+                thumbnail_url = info["thumbnail"]
+                logger.info(f"Found thumbnail from direct thumbnail field: {thumbnail_url}")
+                return thumbnail_url
+                
+            # Method 2: Thumbnails list in main object
+            if "thumbnails" in info and isinstance(info["thumbnails"], list) and info["thumbnails"]:
+                thumbnails = sorted(info["thumbnails"], 
+                                   key=lambda x: x.get("height", 0) * x.get("width", 0) 
+                                   if "height" in x and "width" in x else 0, 
+                                   reverse=True)
+                thumbnail_url = thumbnails[0].get("url", "")
+                if thumbnail_url:
+                    logger.info(f"Found thumbnail from thumbnails list: {thumbnail_url}")
+                    return thumbnail_url
+                    
+            # Method 3: Check in channel sub-object
+            if "channel" in info and isinstance(info["channel"], dict):
+                channel_info = info["channel"]
+                
+                # Check for direct thumbnail
+                if "thumbnail" in channel_info and channel_info["thumbnail"]:
+                    thumbnail_url = channel_info["thumbnail"]
+                    logger.info(f"Found thumbnail from channel.thumbnail: {thumbnail_url}")
+                    return thumbnail_url
+                    
+                # Check for thumbnails list
+                if "thumbnails" in channel_info and isinstance(channel_info["thumbnails"], list) and channel_info["thumbnails"]:
+                    thumbnails = sorted(channel_info["thumbnails"], 
+                                      key=lambda x: x.get("height", 0) * x.get("width", 0) 
+                                      if "height" in x and "width" in x else 0, 
+                                      reverse=True)
+                    thumbnail_url = thumbnails[0].get("url", "")
+                    if thumbnail_url:
+                        logger.info(f"Found thumbnail from channel.thumbnails list: {thumbnail_url}")
+                        return thumbnail_url
+            
+            # Method 4: Check for uploader_id based URL
+            if "uploader_id" in info and info["uploader_id"]:
+                uploader_id = info["uploader_id"]
+                if uploader_id.startswith("UC"):
+                    thumbnail_url = f"https://yt3.googleusercontent.com/channel/{uploader_id}"
+                    logger.info(f"Created thumbnail URL from uploader_id: {thumbnail_url}")
+                    return thumbnail_url
+                    
+            # Method 5: Use channel_id as fallback
+            if "channel_id" in info and info["channel_id"] and info["channel_id"].startswith("UC"):
+                channel_id = info["channel_id"]
+                thumbnail_url = f"https://yt3.googleusercontent.com/channel/{channel_id}"
+                logger.info(f"Created fallback thumbnail URL from channel_id: {thumbnail_url}")
+                return thumbnail_url
+                
+            return ""
+        except Exception as e:
+            logger.error(f"Error in _extract_channel_thumbnail: {str(e)}")
+            return ""
     
     async def download_video(self, request: DownloadRequest) -> Dict[str, Any]:
         """Download a video at specified resolution. Returns result object with status and message."""
@@ -524,5 +630,484 @@ class YouTubeService:
             }
     
     def get_download_progress(self, video_id: str) -> float:
-        """Get the download progress for a video"""
-        return self.active_downloads.get(video_id, 0.0) 
+        """Get the download progress for a specific video"""
+        return self.active_downloads.get(video_id, 0.0)
+        
+    async def get_video_info(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """Get information about a specific video by ID"""
+        try:
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            logger.info(f"Fetching video info for: {url}")
+            
+            loop = asyncio.get_event_loop()
+            
+            def extract_info():
+                # Configure yt-dlp for minimal info extraction
+                video_opts = {
+                    **self.ydl_opts,
+                    'quiet': True,
+                    'skip_download': True,
+                    'extract_flat': False,
+                }
+                
+                try:
+                    with yt_dlp.YoutubeDL(video_opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        return info
+                except Exception as e:
+                    logger.error(f"Error extracting video info: {str(e)}")
+                    return None
+            
+            # Extract info in a thread pool
+            info = await loop.run_in_executor(None, extract_info)
+            
+            if not info:
+                logger.error(f"No information returned for video {video_id}")
+                return None
+            
+            # Get the published date
+            published_at = None
+            upload_date = info.get('upload_date', '')
+            
+            # Try timestamp first (most accurate)
+            if 'timestamp' in info and info['timestamp']:
+                published_at = datetime.fromtimestamp(info['timestamp'], tz=timezone.utc)
+            # Try upload_date (format: YYYYMMDD)
+            elif upload_date and len(upload_date) == 8:
+                try:
+                    year = int(upload_date[:4])
+                    month = int(upload_date[4:6])
+                    day = int(upload_date[6:8])
+                    published_at = datetime(year, month, day, tzinfo=timezone.utc)
+                except ValueError:
+                    published_at = None
+            
+            # If no date found, use current time
+            if not published_at:
+                published_at = datetime.now(timezone.utc)
+            
+            # Construct thumbnail URL
+            thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
+            
+            # Extract channel ID
+            channel_id = info.get('channel_id', '')
+            if not channel_id and 'uploader_id' in info:
+                channel_id = info['uploader_id']
+            
+            # Create video info object
+            video_info = {
+                'id': video_id,
+                'title': info.get('title', 'Untitled Video'),
+                'description': info.get('description', ''),
+                'published_at': published_at,
+                'thumbnail_url': thumbnail_url,
+                'duration': info.get('duration', 0),
+                'view_count': info.get('view_count', 0),
+                'like_count': info.get('like_count', 0),
+                'channel_id': channel_id,
+            }
+            
+            return video_info
+            
+        except Exception as e:
+            logger.error(f"Error fetching video info for {video_id}: {str(e)}")
+            return None
+    
+    async def get_user_subscriptions(self) -> List[Dict[str, Any]]:
+        """
+        Fetches user's YouTube subscriptions using cookies.txt for authentication.
+        Returns a list of basic channel info (id and title only) for faster loading.
+        """
+        try:
+            # Check if cookies file exists - required for getting subscriptions
+            cookies_path = Path('cookies.txt')
+            if not cookies_path.exists() or cookies_path.stat().st_size == 0:
+                logger.error("No cookies.txt file found - required for fetching subscriptions")
+                return []
+            
+            # OPTIMIZATION: Try direct method with faster extraction
+            loop = asyncio.get_event_loop()
+            
+            def extract_subs_fast():
+                import subprocess
+                import json
+                
+                # Direct YouTube subscription list fast extraction
+                # Print channel ID and name only - skips enrichment for speed
+                logger.info("Fast subscription extraction: getting only channel ID and name")
+                cmd = [
+                    "yt-dlp",
+                    "--flat-playlist",
+                    "--print", "%(uploader)s %(channel_id)s %(uploader_id)s",
+                    "--cookies", str(cookies_path),
+                    "--no-warnings",
+                    # Try both subscription list locations
+                    "https://www.youtube.com/feed/channels",
+                ]
+                
+                logger.info(f"Running optimized command: {' '.join(cmd)}")
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    logger.warning(f"First extraction attempt failed: {result.stderr}")
+                    # Try alternate URLs
+                    cmd[-1] = ":ytsubs"
+                    logger.info(f"Trying alternate URL: {cmd[-1]}")
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if result.returncode != 0:
+                        cmd[-1] = "https://www.youtube.com/feed/subscriptions"
+                        logger.info(f"Trying final URL: {cmd[-1]}")
+                        result = subprocess.run(cmd, capture_output=True, text=True)
+                        
+                        if result.returncode != 0:
+                            logger.error(f"All extraction attempts failed: {result.stderr}")
+                            return []
+                
+                # Parse the output format: "Channel Name UC123456789012345678901234"
+                channels = []
+                channel_ids = set()
+                
+                for line in result.stdout.splitlines():
+                    if not line.strip():
+                        continue
+                    
+                    # Extract channel ID (either from channel_id or uploader_id)
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        # Last part is likely the ID
+                        channel_id = None
+                        title_parts = []
+                        
+                        # Look for UC IDs which are YouTube channel IDs
+                        for part in parts:
+                            if part.startswith("UC") and len(part) >= 20:
+                                channel_id = part
+                            else:
+                                title_parts.append(part)
+                        
+                        # If we found a channel ID
+                        if channel_id and channel_id not in channel_ids:
+                            channel_ids.add(channel_id)
+                            title = " ".join(title_parts) if title_parts else "Unknown Channel"
+                            
+                            channels.append({
+                                "id": channel_id,
+                                "title": title,
+                                "thumbnail_url": f"https://yt3.googleusercontent.com/channel/{channel_id}",
+                                "description": ""
+                            })
+                
+                logger.info(f"Fast extraction found {len(channels)} subscribed channels")
+                return channels
+            
+            # Try the fast extraction first
+            channels = await loop.run_in_executor(None, extract_subs_fast)
+            
+            if channels:
+                return channels
+            
+            # If that failed, try the fallback method with --skip=authcheck
+            logger.info("Fast extraction failed, using fallback method")
+            
+            def extract_subs_fallback():
+                import subprocess
+                import json
+                
+                # Fallback to regular JSON extraction but with authcheck skipped
+                cmd = [
+                    "yt-dlp",
+                    "--flat-playlist",
+                    "--extractor-args", "youtubetab:skip=authcheck",
+                    "--dump-json",
+                    "--cookies", str(cookies_path),
+                    "--no-warnings",
+                    ":ytsubs"
+                ]
+                
+                logger.info(f"Running fallback command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                channels = []
+                channel_ids = set()
+                
+                if result.returncode != 0:
+                    logger.error(f"Fallback extraction failed: {result.stderr}")
+                    return []
+                
+                for line in result.stdout.splitlines():
+                    if not line.strip():
+                        continue
+                    
+                    try:
+                        data = json.loads(line)
+                        channel_id = data.get("channel_id") or data.get("uploader_id")
+                        
+                        if channel_id and channel_id.startswith("UC") and channel_id not in channel_ids:
+                            channel_ids.add(channel_id)
+                            channels.append({
+                                "id": channel_id,
+                                "title": data.get("channel") or data.get("uploader") or "Unknown Channel",
+                                "thumbnail_url": f"https://yt3.googleusercontent.com/channel/{channel_id}",
+                                "description": ""
+                            })
+                    except Exception as e:
+                        continue
+                
+                return channels
+            
+            # Try the fallback method
+            channels = await loop.run_in_executor(None, extract_subs_fallback)
+            
+            if not channels:
+                logger.warning("All subscription extraction methods failed")
+            
+            return channels
+            
+        except Exception as e:
+            logger.error(f"Error fetching subscriptions: {str(e)}")
+            return []
+    
+    async def _get_subscriptions_using_ytsubs(self) -> List[Dict[str, Any]]:
+        """
+        Fetch YouTube subscriptions using the dedicated :ytsubs extractor.
+        This is the most reliable method to get subscriptions.
+        """
+        try:
+            cookies_path = Path('cookies.txt')
+            if not cookies_path.exists():
+                return []
+            
+            loop = asyncio.get_event_loop()
+            
+            def extract_subs():
+                import subprocess
+                import json
+                
+                # Command using the special :ytsubs extractor
+                cmd = [
+                    "yt-dlp",
+                    "--flat-playlist",
+                    "--skip-download", 
+                    "--cookies", str(cookies_path),
+                    "--dump-json",
+                    "--no-warnings",
+                    ":ytsubs"  # Special extractor for subscriptions
+                ]
+                
+                logger.info(f"Running ytsubs command: {' '.join(cmd)}")
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                # Log stdout and stderr for debugging
+                logger.debug(f"STDOUT: {result.stdout[:1000]}...")
+                logger.debug(f"STDERR: {result.stderr}")
+                
+                if result.returncode != 0:
+                    logger.error(f"Error using :ytsubs extractor: {result.stderr}")
+                    return []
+                
+                # Parse each subscription channel from the output
+                channels = []
+                channel_ids = set()  # To avoid duplicates
+                
+                for line in result.stdout.splitlines():
+                    if not line.strip():
+                        continue
+                    
+                    try:
+                        data = json.loads(line)
+                        
+                        # Extract channel info
+                        channel_id = data.get("channel_id") or data.get("uploader_id")
+                        if not channel_id or channel_id in channel_ids:
+                            continue
+                        
+                        # Make sure it's a channel ID
+                        if not channel_id.startswith("UC"):
+                            continue
+                        
+                        channel_ids.add(channel_id)
+                        
+                        # Create channel entry
+                        channel = {
+                            "id": channel_id,
+                            "title": data.get("channel") or data.get("uploader") or "Unknown Channel",
+                            "thumbnail_url": data.get("thumbnail") or f"https://yt3.googleusercontent.com/channel/{channel_id}",
+                            "description": ""
+                        }
+                        channels.append(channel)
+                    
+                    except json.JSONDecodeError:
+                        continue
+                    except Exception as e:
+                        logger.warning(f"Error processing :ytsubs entry: {str(e)}")
+                
+                logger.info(f"Found {len(channels)} channels using :ytsubs")
+                return channels
+            
+            # Run in thread pool
+            subscriptions = await loop.run_in_executor(None, extract_subs)
+            
+            # If found subscriptions, enrich them with channel info
+            if subscriptions:
+                logger.info("Successfully retrieved subscriptions using :ytsubs extractor")
+                
+                # Enrich with channel info (limit to 10 concurrent operations)
+                enriched_subs = []
+                batch_size = 10
+                for i in range(0, len(subscriptions), batch_size):
+                    batch = subscriptions[i:i+batch_size]
+                    tasks = [self.get_channel_info(channel["id"]) for channel in batch]
+                    channel_infos = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    for j, info in enumerate(channel_infos):
+                        if isinstance(info, Exception):
+                            logger.error(f"Error enriching channel: {str(info)}")
+                            enriched_subs.append(batch[j])
+                        elif info:
+                            enriched_subs.append(info)
+                        else:
+                            enriched_subs.append(batch[j])
+                
+                return enriched_subs
+            
+            return []
+        
+        except Exception as e:
+            logger.error(f"Error in _get_subscriptions_using_ytsubs: {str(e)}")
+            return []
+    
+    async def _get_subscriptions_from_list(self) -> List[Dict[str, Any]]:
+        """
+        Alternative method to fetch subscriptions using the subscription list page.
+        """
+        try:
+            cookies_path = Path('cookies.txt')
+            if not cookies_path.exists():
+                return []
+                
+            # URL for subscription list
+            url = "https://www.youtube.com/feed/channels"
+            logger.info(f"Fetching subscriptions from list: {url}")
+            
+            loop = asyncio.get_event_loop()
+            
+            def extract_channel_list():
+                import subprocess
+                import json
+                import re
+                
+                # Command to fetch the subscription list page with debug info
+                cmd = [
+                    "yt-dlp",
+                    "--dump-pages",  # Dump the HTML pages instead of videos
+                    "--no-download",
+                    "--cookies", str(cookies_path),
+                    "--no-warnings",
+                    url
+                ]
+                
+                logger.info(f"Running subscription list command: {' '.join(cmd)}")
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    logger.error(f"Error fetching subscription list: {result.stderr}")
+                    return []
+                
+                # Extract channel IDs from various patterns in the HTML
+                channels = []
+                channel_ids = set()
+                
+                # Multiple regex patterns to extract channel info from different parts of the page
+                channel_patterns = [
+                    # Match channel links with ID
+                    r'href="/channel/(UC[a-zA-Z0-9_-]{22})"[^>]*>([^<]+)</a>',
+                    # Match channel links with handle
+                    r'href="/@([^"]+)"[^>]*>([^<]+)</a>',
+                    # Match JSON data with channel info
+                    r'"channelId":"(UC[a-zA-Z0-9_-]{22})","title":"([^"]+)"',
+                ]
+                
+                html_content = result.stdout
+                
+                # Try to extract structured data directly
+                try:
+                    # Look for initialData JSON
+                    json_match = re.search(r'var ytInitialData = (.+?);</script>', html_content)
+                    if json_match:
+                        data_json = json_match.group(1)
+                        data = json.loads(data_json)
+                        
+                        # Navigate to subscriptions in the JSON structure
+                        if 'contents' in data and 'twoColumnBrowseResultsRenderer' in data['contents']:
+                            main_section = data['contents']['twoColumnBrowseResultsRenderer']['tabs'][0]['tabRenderer']['content']
+                            if 'sectionListRenderer' in main_section:
+                                section_list = main_section['sectionListRenderer']['contents']
+                                for section in section_list:
+                                    if 'itemSectionRenderer' in section:
+                                        items = section['itemSectionRenderer']['contents']
+                                        for item in items:
+                                            if 'shelfRenderer' in item and 'content' in item['shelfRenderer']:
+                                                if 'gridRenderer' in item['shelfRenderer']['content']:
+                                                    grid_items = item['shelfRenderer']['content']['gridRenderer']['items']
+                                                    for grid_item in grid_items:
+                                                        if 'gridChannelRenderer' in grid_item:
+                                                            channel_data = grid_item['gridChannelRenderer']
+                                                            if 'channelId' in channel_data:
+                                                                channel_id = channel_data['channelId']
+                                                                if channel_id not in channel_ids:
+                                                                    channel_ids.add(channel_id)
+                                                                    title = channel_data.get('title', {}).get('simpleText', 'Unknown Channel')
+                                                                    
+                                                                    # Try to extract thumbnail URL
+                                                                    thumbnail_url = None
+                                                                    if 'thumbnail' in channel_data and 'thumbnails' in channel_data['thumbnail']:
+                                                                        thumbnails = channel_data['thumbnail']['thumbnails']
+                                                                        if thumbnails and len(thumbnails) > 0:
+                                                                            thumbnail_url = thumbnails[-1].get('url', '')
+                                                                    
+                                                                    if not thumbnail_url:
+                                                                        thumbnail_url = f"https://yt3.googleusercontent.com/channel/{channel_id}"
+                                                                    
+                                                                    channels.append({
+                                                                        "id": channel_id,
+                                                                        "title": title,
+                                                                        "thumbnail_url": thumbnail_url,
+                                                                        "description": ""
+                                                                    })
+                except Exception as e:
+                    logger.error(f"Error parsing YouTube JSON data: {str(e)}")
+                
+                # If we couldn't extract channels from JSON, try regex patterns
+                if not channels:
+                    for pattern in channel_patterns:
+                        matches = re.findall(pattern, html_content)
+                        for match in matches:
+                            channel_id = match[0]
+                            title = match[1]
+                            
+                            # For handle-based channels, get the actual channel ID
+                            if not channel_id.startswith('UC'):
+                                continue
+                            
+                            if channel_id not in channel_ids:
+                                channel_ids.add(channel_id)
+                                channels.append({
+                                    "id": channel_id,
+                                    "title": title,
+                                    "thumbnail_url": f"https://yt3.googleusercontent.com/channel/{channel_id}",
+                                    "description": ""
+                                })
+                
+                logger.info(f"Found {len(channels)} subscribed channels from subscription list")
+                return channels
+            
+            # Extract subscriptions in a thread pool
+            return await loop.run_in_executor(None, extract_channel_list)
+            
+        except Exception as e:
+            logger.error(f"Error in _get_subscriptions_from_list: {str(e)}")
+            return [] 

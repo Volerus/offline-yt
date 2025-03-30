@@ -678,6 +678,191 @@ async def check_auth_status():
         "warning": "Your cookies are more than 30 days old. Consider refreshing them." if cookie_age_days > 30 else None
     }
 
+@router.get("/youtube/subscriptions")
+async def get_youtube_subscriptions(
+    browser: Optional[str] = None, 
+    skip_auth_check: bool = False,
+    fast: bool = True
+):
+    """
+    Fetch user's YouTube channel subscriptions
+    
+    - skip_auth_check: Skips YouTube authentication check for faster results
+    - fast: Uses optimized extraction focused on minimal data
+    """
+    # Check authentication first
+    cookies_path = Path('cookies.txt')
+    has_cookies = cookies_path.exists() and cookies_path.stat().st_size > 0
+    
+    if not has_cookies:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "message": "YouTube authentication required",
+                "solution": "Please set up a cookies.txt file with your YouTube credentials.",
+                "instructions": [
+                    "1. Install a browser extension like 'Get cookies.txt' or 'EditThisCookie'",
+                    "2. Log in to YouTube in your browser",
+                    "3. Use the extension to export cookies for youtube.com to cookies.txt",
+                    "4. Place the cookies.txt file in the root directory of this application"
+                ]
+            }
+        )
+    
+    # Skip the full authentication check if skip_auth_check=True
+    if not skip_auth_check:
+        # Check if cookies contain required YouTube authentication
+        youtube_auth_cookies = ["SID", "SSID", "__Secure-1PSID", "__Secure-3PSID"]
+        try:
+            with open(cookies_path, "r") as f:
+                cookie_content = f.read()
+                has_auth = any(cookie in cookie_content for cookie in youtube_auth_cookies)
+                if not has_auth:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail={
+                            "message": "YouTube cookies file is invalid or missing authentication tokens",
+                            "solution": "Please generate a new cookies.txt file from YouTube when logged in.",
+                            "instructions": [
+                                "1. Make sure you are logged into YouTube in your browser",
+                                "2. Export a fresh set of cookies using a browser extension",
+                                "3. The cookies.txt file must contain YouTube authentication tokens"
+                            ]
+                        }
+                    )
+        except Exception as e:
+            logger.error(f"Error reading cookies file: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not read cookies file. Please check file permissions."
+            )
+    
+    # Fetch subscriptions
+    try:
+        start_time = datetime.now()
+        logger.info(f"Starting subscription fetch with fast={fast}, skip_auth_check={skip_auth_check}")
+        
+        subscriptions = await youtube_service.get_user_subscriptions()
+        
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Subscription fetch completed in {elapsed:.2f}s")
+        
+        if not subscriptions:
+            # If no subscriptions were found, provide detailed troubleshooting steps
+            return {
+                "success": False,
+                "message": "No subscriptions found. Please ensure you're logged into a YouTube account that has channel subscriptions.",
+                "troubleshooting": [
+                    "1. Make sure you're using a YouTube account that has subscriptions",
+                    "2. Try uploading a fresh cookies.txt file from your browser",
+                    "3. Ensure you're fully logged into YouTube before exporting cookies",
+                    "4. Check YouTube still works when logged in on your browser"
+                ],
+                "subscriptions": []
+            }
+        
+        return {
+            "success": True,
+            "message": f"Found {len(subscriptions)} subscribed channels in {elapsed:.2f}s",
+            "subscriptions": subscriptions
+        }
+    except Exception as e:
+        logger.error(f"Error fetching YouTube subscriptions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch subscriptions: {str(e)}"
+        )
+
+@router.post("/auth/cookies/browser")
+async def extract_browser_cookies(
+    browser_data: Dict[str, str]
+):
+    """Extract YouTube cookies directly from a browser profile"""
+    try:
+        browser_name = browser_data.get("browser")
+        profile_name = browser_data.get("profile", "")
+        
+        if not browser_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Browser name is required"
+            )
+        
+        # Check if yt-dlp is installed and supports the browser
+        import subprocess
+        
+        # First check if yt-dlp supports this browser
+        browsers_check = subprocess.run(
+            ["yt-dlp", "--list-extractors"], 
+            capture_output=True, 
+            text=True
+        )
+        
+        if browsers_check.returncode != 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to check supported browsers. Make sure yt-dlp is installed correctly."
+            )
+        
+        # Build the command to extract cookies
+        cmd = ["yt-dlp", f"--cookies-from-browser", browser_name]
+        
+        # Add profile if provided
+        if profile_name:
+            cmd.append(profile_name)
+        
+        # Add output redirect to cookies.txt
+        cmd.extend(["--cookies", "cookies.txt", "-j", "https://www.youtube.com"])
+        
+        logger.info(f"Extracting cookies with command: {' '.join(cmd)}")
+        
+        # Run the command
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            logger.error(f"Failed to extract cookies: {result.stderr}")
+            return {
+                "success": False,
+                "message": f"Failed to extract cookies from {browser_name}",
+                "error": result.stderr,
+                "supported_browsers": "Try: chrome, firefox, opera, edge, chromium, safari"
+            }
+        
+        # Verify that we got valid cookies
+        cookies_path = Path('cookies.txt')
+        if not cookies_path.exists() or cookies_path.stat().st_size < 100:
+            return {
+                "success": False,
+                "message": "Cookies extraction did not generate a valid cookies file",
+                "error": "File was not created or is too small"
+            }
+        
+        # Check for YouTube authentication cookies
+        with open(cookies_path, "r") as f:
+            cookie_content = f.read()
+            youtube_auth_cookies = ["SID", "SSID", "__Secure-1PSID", "__Secure-3PSID"]
+            has_auth = any(cookie in cookie_content for cookie in youtube_auth_cookies)
+            
+            if not has_auth:
+                return {
+                    "success": False,
+                    "message": "Cookies were extracted, but YouTube authentication cookies were not found",
+                    "solution": "Make sure you're logged into YouTube in your browser before extracting cookies"
+                }
+        
+        return {
+            "success": True,
+            "message": f"Successfully extracted cookies from {browser_name}",
+            "file_size": cookies_path.stat().st_size
+        }
+        
+    except Exception as e:
+        logger.error(f"Error extracting browser cookies: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to extract browser cookies: {str(e)}"
+        )
+
 @router.get("/troubleshooting/downloads")
 async def download_troubleshooting():
     """Get troubleshooting information for video download issues"""
@@ -802,4 +987,103 @@ async def upload_cookies_file(file: UploadFile = File(...)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload cookie file: {str(e)}"
+        )
+
+# Download from URL endpoint
+@router.post("/videos/download-by-url")
+async def download_by_url(
+    url: dict,
+    session: AsyncSession = Depends(get_session)
+):
+    """Download a video from URL"""
+    try:
+        # Extract video ID from YouTube URL and resolution
+        youtube_url = url.get("url", "")
+        resolution = url.get("resolution", "720p")
+        
+        if not youtube_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL is required"
+            )
+        
+        # Extract video ID from various formats of YouTube URLs
+        import re
+        video_id = None
+        
+        # Match patterns for different YouTube URL formats
+        patterns = [
+            r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",  # Standard YouTube URL
+            r"(?:embed\/)([0-9A-Za-z_-]{11})",  # Embed URL
+            r"(?:youtu\.be\/)([0-9A-Za-z_-]{11})"  # Short URL
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, youtube_url)
+            if match:
+                video_id = match.group(1)
+                break
+        
+        if not video_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid YouTube URL. Could not extract video ID."
+            )
+        
+        # Check if video already exists in database
+        db = DatabaseService(session)
+        existing_video = await db.get_video(video_id)
+        
+        if not existing_video:
+            # Get video info from YouTube to create a new entry
+            try:
+                # Fetch video info
+                video_info = await youtube_service.get_video_info(video_id)
+                
+                if not video_info:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Video with ID {video_id} not found on YouTube"
+                    )
+                
+                # Create video in database
+                video_data = {
+                    'id': video_id,
+                    'channel_id': video_info.get('channel_id', ''),
+                    'title': video_info.get('title', 'Unknown Video'),
+                    'description': video_info.get('description', ''),
+                    'published_at': video_info.get('published_at', datetime.utcnow()),
+                    'thumbnail_url': video_info.get('thumbnail_url', ''),
+                    'duration': video_info.get('duration', 0),
+                    'view_count': video_info.get('view_count', 0),
+                    'like_count': video_info.get('like_count', 0),
+                    'is_downloaded': False,
+                }
+                await db.create_video(VideoCreate(**video_data))
+            except Exception as e:
+                logger.error(f"Error fetching video info: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error fetching video information: {str(e)}"
+                )
+        
+        # Use the resolution provided in the request, fall back to settings if not provided
+        if not resolution:
+            # Get settings to determine default resolution
+            settings = await db.get_user_settings()
+            resolution = settings.default_resolution if settings else "720p"
+        
+        # Create download request with video ID and resolution
+        download_request = DownloadRequest(video_id=video_id, resolution=resolution)
+        
+        # Call the existing download_video function
+        return await download_video(download_request, session)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in download_by_url: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error downloading from URL: {str(e)}"
         ) 

@@ -37,47 +37,80 @@ const ChannelCard = ({ channel }) => {
   
   return (
     <>
-      <Card sx={{ display: 'flex', mb: 2 }}>
+      <Card 
+        sx={{ 
+          width: 240, 
+          height: 280, 
+          m: 1, 
+          display: 'inline-block',
+          borderRadius: 2,
+          position: 'relative',
+          overflow: 'hidden',
+          transition: 'transform 0.2s, box-shadow 0.2s',
+          '&:hover': {
+            transform: 'translateY(-4px)',
+            boxShadow: '0 8px 16px rgba(0,0,0,0.1)',
+          }
+        }}
+      >
         <CardMedia
           component="img"
-          sx={{ width: 80, height: 80, objectFit: 'cover' }}
-          image={channel.thumbnail_url || 'https://via.placeholder.com/80?text=No+Image'}
+          sx={{ 
+            width: '100%', 
+            height: 140,
+            objectFit: 'cover'
+          }}
+          image={channel.thumbnail_url || 'https://via.placeholder.com/240x140?text=No+Image'}
           alt={channel.title}
         />
-        <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-          <CardContent sx={{ flex: '1 0 auto' }}>
-            <Typography component="div" variant="h6" noWrap>
-              {channel.title}
-            </Typography>
-            <Typography variant="subtitle2" color="text.secondary" component="div" noWrap>
-              ID: {channel.id}
-            </Typography>
-            <Typography 
-              variant="body2" 
-              color="text.secondary" 
-              component="div"
-              sx={{ 
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                height: '2.5em',
-              }}
-            >
-              {channel.description || 'No description available'}
-            </Typography>
-          </CardContent>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', pl: 1, pr: 1 }}>
-          <IconButton 
-            aria-label="delete" 
-            onClick={() => setOpen(true)} 
-            color="error"
+        
+        <CardContent sx={{ p: 2 }}>
+          <Typography component="div" variant="h6" noWrap sx={{ mb: 0.5 }}>
+            {channel.title}
+          </Typography>
+          <Typography 
+            variant="caption" 
+            color="text.secondary" 
+            component="div" 
+            noWrap
+            sx={{ mb: 1 }}
           >
-            <DeleteIcon />
-          </IconButton>
-        </Box>
+            ID: {channel.id}
+          </Typography>
+          <Typography 
+            variant="body2" 
+            color="text.secondary" 
+            component="div"
+            sx={{ 
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxHeight: '2.5em',
+            }}
+          >
+            {channel.description || 'No description available'}
+          </Typography>
+        </CardContent>
+        
+        <IconButton 
+          aria-label="delete" 
+          onClick={() => setOpen(true)} 
+          color="error"
+          size="small"
+          sx={{ 
+            position: 'absolute',
+            right: 8,
+            bottom: 8,
+            bgcolor: 'rgba(255,255,255,0.8)',
+            '&:hover': {
+              bgcolor: 'rgba(255,255,255,0.95)',
+            }
+          }}
+        >
+          <DeleteIcon fontSize="small" />
+        </IconButton>
       </Card>
       
       <Dialog

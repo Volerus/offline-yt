@@ -74,6 +74,16 @@ export const downloadVideo = async (downloadRequest) => {
   }
 };
 
+export const downloadVideoByUrl = async (url, resolution = '720p') => {
+  try {
+    const response = await api.post('/videos/download-by-url', { url, resolution });
+    return response.data;
+  } catch (error) {
+    console.error('Error in downloadVideoByUrl:', error);
+    throw error;
+  }
+};
+
 export const getDownloadProgress = async (videoId) => {
   try {
     const response = await api.get(`/videos/${videoId}/progress`);
@@ -131,6 +141,34 @@ export const deleteChannel = async (channelId) => {
     return response.data;
   } catch (error) {
     console.error(`Error in deleteChannel(${channelId}):`, error);
+    throw error;
+  }
+};
+
+export const getYouTubeSubscriptions = async (options = {}) => {
+  try {
+    // Default to fast extraction with auth check skipped for speed
+    const params = {
+      skip_auth_check: true,
+      fast: true,
+      ...options
+    };
+    
+    console.log('Fetching YouTube subscriptions with params:', params);
+    const response = await api.get('/youtube/subscriptions', { params });
+    return response.data;
+  } catch (error) {
+    console.error('Error in getYouTubeSubscriptions:', error);
+    throw error;
+  }
+};
+
+export const extractBrowserCookies = async (browserData) => {
+  try {
+    const response = await api.post('/auth/cookies/browser', browserData);
+    return response.data;
+  } catch (error) {
+    console.error('Error extracting browser cookies:', error);
     throw error;
   }
 };
