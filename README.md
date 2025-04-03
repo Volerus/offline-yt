@@ -421,3 +421,79 @@ This section outlines how to set up the application to be hosted on a local serv
 2. Verify downloads work correctly with server-based storage
 3. Measure performance with multiple simultaneous users
 4. Test automatic recovery after server restart
+
+
+flowchart TD
+    %% Frontend Layer
+    subgraph "Frontend Layer"
+        FEApp["React UI"]:::frontend
+        FEComponents["UI Components"]:::frontend
+        FEPages["Pages"]:::frontend
+        FEAPI["API Service"]:::frontend
+        FEState["State Management"]:::frontend
+        FEHooks["Hooks"]:::frontend
+    end
+
+    %% Backend Layer
+    subgraph "Backend Layer"
+        FastAPI["FastAPI Application"]:::backend
+        APIEndpoints["API Endpoints"]:::backend
+        Pydantic["Pydantic Schemas"]:::backend
+        YouTubeService["YouTube Video Processing Service"]:::backend
+        DBService["Database Operations Service"]:::backend
+    end
+
+    %% Database Layer
+    subgraph "Database Layer"
+        DBSetup["Database Setup"]:::database
+        DBModels["Database Models"]:::database
+    end
+
+    %% External Services
+    subgraph "External Services"
+        YtDlp["yt-dlp"]:::external
+        Docker["Docker Container (Future)"]:::external
+        Electron["Electron Wrapper (Future)"]:::external
+        ReverseProxy["Reverse Proxy (Future)"]:::external
+    end
+
+    %% Frontend Internal Connections
+    FEApp --> FEComponents
+    FEApp --> FEPages
+    FEApp --> FEState
+    FEState --> FEHooks
+
+    %% Frontend to Backend Interaction
+    FEAPI -->|"HTTP_Request"| APIEndpoints
+    FEApp --> FEAPI
+
+    %% Backend Internal Connections
+    APIEndpoints -->|"validates"| Pydantic
+    APIEndpoints -->|"calls_service"| YouTubeService
+    APIEndpoints -->|"calls_service"| DBService
+
+    %% Backend to External and Database
+    YouTubeService -->|"invokes"| YtDlp
+    DBService -->|"queries"| DBSetup
+    DBService -->|"queries"| DBModels
+
+    %% Click Events
+    click FastAPI "https://github.com/volerus/offline-yt/blob/main/app/main.py"
+    click APIEndpoints "https://github.com/volerus/offline-yt/blob/main/app/api/routes.py"
+    click DBSetup "https://github.com/volerus/offline-yt/blob/main/app/database/setup.py"
+    click DBModels "https://github.com/volerus/offline-yt/blob/main/app/models/models.py"
+    click Pydantic "https://github.com/volerus/offline-yt/blob/main/app/schemas/schemas.py"
+    click YouTubeService "https://github.com/volerus/offline-yt/blob/main/app/services/youtube.py"
+    click DBService "https://github.com/volerus/offline-yt/blob/main/app/services/database.py"
+    click FEApp "https://github.com/volerus/offline-yt/blob/main/frontend/src/App.js"
+    click FEComponents "https://github.com/volerus/offline-yt/tree/main/frontend/src/components/"
+    click FEPages "https://github.com/volerus/offline-yt/tree/main/frontend/src/pages/"
+    click FEAPI "https://github.com/volerus/offline-yt/blob/main/frontend/src/services/api.js"
+    click FEState "https://github.com/volerus/offline-yt/blob/main/frontend/src/context/SettingsContext.js"
+    click FEHooks "https://github.com/volerus/offline-yt/tree/main/frontend/src/hooks/"
+
+    %% Styles
+    classDef frontend fill:#F9E79F,stroke:#B7950B,stroke-width:2px;
+    classDef backend fill:#AED6F1,stroke:#1B4F72,stroke-width:2px;
+    classDef database fill:#ABEBC6,stroke:#1D8348,stroke-width:2px;
+    classDef external fill:#F5B7B1,stroke:#922B21,stroke-width:2px;

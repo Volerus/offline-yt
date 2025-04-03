@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
 import json
+import requests
 
 from app.models.models import Video, Channel
 from app.schemas.schemas import DownloadRequest
@@ -725,148 +726,107 @@ class YouTubeService:
                 logger.error("No cookies.txt file found - required for fetching subscriptions")
                 return []
             
-            # OPTIMIZATION: Try direct method with faster extraction
+            # Try multiple methods in order of reliability
+            methods = [
+                self._get_subscriptions_from_api,  # Try API method first
+                self._get_subscriptions_using_ytsubs,
+                self._get_subscriptions_from_list,
+                self._get_subscriptions_from_feed
+            ]
+            
+            for method in methods:
+                try:
+                    logger.info(f"Trying to fetch subscriptions using {method.__name__}")
+                    subscriptions = await method()
+                    if subscriptions:
+                        return subscriptions
+                except Exception as e:
+                    logger.warning(f"Failed to fetch subscriptions using {method.__name__}: {str(e)}")
+                    continue
+            
+            logger.error("All subscription fetching methods failed")
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error in get_user_subscriptions: {str(e)}")
+            return []
+
+    async def _get_subscriptions_from_feed(self) -> List[Dict[str, Any]]:
+        """
+        Fetch subscriptions from the YouTube feed page.
+        This is a fallback method that tries to parse the webpage directly.
+        """
+        try:
+            cookies_path = Path('cookies.txt')
+            if not cookies_path.exists():
+                return []
+            
             loop = asyncio.get_event_loop()
             
-            def extract_subs_fast():
+            def extract_subs():
                 import subprocess
                 import json
+                import re
                 
-                # Direct YouTube subscription list fast extraction
-                # Print channel ID and name only - skips enrichment for speed
-                logger.info("Fast subscription extraction: getting only channel ID and name")
-                cmd = [
-                    "yt-dlp",
-                    "--flat-playlist",
-                    "--print", "%(uploader)s %(channel_id)s %(uploader_id)s",
-                    "--cookies", str(cookies_path),
-                    "--no-warnings",
-                    # Try both subscription list locations
+                # Try multiple feed URLs
+                urls = [
                     "https://www.youtube.com/feed/channels",
+                    "https://www.youtube.com/feed/subscriptions"
                 ]
                 
-                logger.info(f"Running optimized command: {' '.join(cmd)}")
-                
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                if result.returncode != 0:
-                    logger.warning(f"First extraction attempt failed: {result.stderr}")
-                    # Try alternate URLs
-                    cmd[-1] = ":ytsubs"
-                    logger.info(f"Trying alternate URL: {cmd[-1]}")
+                for url in urls:
+                    cmd = [
+                        "yt-dlp",
+                        "--dump-pages",
+                        "--no-download",
+                        "--cookies", str(cookies_path),
+                        "--no-warnings",
+                        "--extractor-args", "youtubetab:skip=authcheck",
+                        url
+                    ]
+                    
+                    logger.info(f"Running feed extraction command: {' '.join(cmd)}")
+                    
                     result = subprocess.run(cmd, capture_output=True, text=True)
                     
                     if result.returncode != 0:
-                        cmd[-1] = "https://www.youtube.com/feed/subscriptions"
-                        logger.info(f"Trying final URL: {cmd[-1]}")
-                        result = subprocess.run(cmd, capture_output=True, text=True)
-                        
-                        if result.returncode != 0:
-                            logger.error(f"All extraction attempts failed: {result.stderr}")
-                            return []
-                
-                # Parse the output format: "Channel Name UC123456789012345678901234"
-                channels = []
-                channel_ids = set()
-                
-                for line in result.stdout.splitlines():
-                    if not line.strip():
+                        logger.warning(f"Failed to fetch from {url}: {result.stderr}")
                         continue
                     
-                    # Extract channel ID (either from channel_id or uploader_id)
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        # Last part is likely the ID
-                        channel_id = None
-                        title_parts = []
-                        
-                        # Look for UC IDs which are YouTube channel IDs
-                        for part in parts:
-                            if part.startswith("UC") and len(part) >= 20:
-                                channel_id = part
-                            else:
-                                title_parts.append(part)
-                        
-                        # If we found a channel ID
-                        if channel_id and channel_id not in channel_ids:
-                            channel_ids.add(channel_id)
-                            title = " ".join(title_parts) if title_parts else "Unknown Channel"
-                            
-                            channels.append({
-                                "id": channel_id,
-                                "title": title,
-                                "thumbnail_url": f"https://yt3.googleusercontent.com/channel/{channel_id}",
-                                "description": ""
-                            })
-                
-                logger.info(f"Fast extraction found {len(channels)} subscribed channels")
-                return channels
-            
-            # Try the fast extraction first
-            channels = await loop.run_in_executor(None, extract_subs_fast)
-            
-            if channels:
-                return channels
-            
-            # If that failed, try the fallback method with --skip=authcheck
-            logger.info("Fast extraction failed, using fallback method")
-            
-            def extract_subs_fallback():
-                import subprocess
-                import json
-                
-                # Fallback to regular JSON extraction but with authcheck skipped
-                cmd = [
-                    "yt-dlp",
-                    "--flat-playlist",
-                    "--extractor-args", "youtubetab:skip=authcheck",
-                    "--dump-json",
-                    "--cookies", str(cookies_path),
-                    "--no-warnings",
-                    ":ytsubs"
-                ]
-                
-                logger.info(f"Running fallback command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                channels = []
-                channel_ids = set()
-                
-                if result.returncode != 0:
-                    logger.error(f"Fallback extraction failed: {result.stderr}")
-                    return []
-                
-                for line in result.stdout.splitlines():
-                    if not line.strip():
-                        continue
+                    # Try to extract channel information from the page HTML
+                    html = result.stdout
+                    channels = []
+                    channel_ids = set()
                     
-                    try:
-                        data = json.loads(line)
-                        channel_id = data.get("channel_id") or data.get("uploader_id")
-                        
-                        if channel_id and channel_id.startswith("UC") and channel_id not in channel_ids:
-                            channel_ids.add(channel_id)
-                            channels.append({
-                                "id": channel_id,
-                                "title": data.get("channel") or data.get("uploader") or "Unknown Channel",
-                                "thumbnail_url": f"https://yt3.googleusercontent.com/channel/{channel_id}",
-                                "description": ""
-                            })
-                    except Exception as e:
-                        continue
+                    # Look for channel information in various formats
+                    patterns = [
+                        r'"channelId":"(UC[a-zA-Z0-9_-]{22})","title":"([^"]+)"',  # JSON format
+                        r'href="/channel/(UC[a-zA-Z0-9_-]{22})"[^>]*>([^<]+)</a>',  # HTML format
+                        r'data-channel-external-id="(UC[a-zA-Z0-9_-]{22})"[^>]*>([^<]+)</a>'  # Data attribute
+                    ]
+                    
+                    for pattern in patterns:
+                        matches = re.findall(pattern, html)
+                        for channel_id, title in matches:
+                            if channel_id not in channel_ids and channel_id.startswith("UC"):
+                                channel_ids.add(channel_id)
+                                channels.append({
+                                    "id": channel_id,
+                                    "title": title,
+                                    "thumbnail_url": f"https://yt3.googleusercontent.com/channel/{channel_id}",
+                                    "description": ""
+                                })
+                    
+                    if channels:
+                        logger.info(f"Found {len(channels)} channels from {url}")
+                        return channels
                 
-                return channels
+                return []
             
-            # Try the fallback method
-            channels = await loop.run_in_executor(None, extract_subs_fallback)
-            
-            if not channels:
-                logger.warning("All subscription extraction methods failed")
-            
-            return channels
+            return await loop.run_in_executor(None, extract_subs)
             
         except Exception as e:
-            logger.error(f"Error fetching subscriptions: {str(e)}")
+            logger.error(f"Error in _get_subscriptions_from_feed: {str(e)}")
             return []
     
     async def _get_subscriptions_using_ytsubs(self) -> List[Dict[str, Any]]:
@@ -1110,4 +1070,159 @@ class YouTubeService:
             
         except Exception as e:
             logger.error(f"Error in _get_subscriptions_from_list: {str(e)}")
+            return []
+    
+    async def _get_subscriptions_from_api(self) -> List[Dict[str, Any]]:
+        """
+        Fetch subscriptions using YouTube's API directly.
+        This method uses the authenticated feed URL to get subscription data.
+        """
+        try:
+            cookies_path = Path('cookies.txt')
+            if not cookies_path.exists():
+                return []
+            
+            loop = asyncio.get_event_loop()
+            
+            def extract_subs():
+                import subprocess
+                import json
+                import re
+                
+                # Use the authenticated feed URL
+                url = "https://www.youtube.com/feed/channels"
+                
+                # First, get the API key and client version
+                cmd = [
+                    "yt-dlp",
+                    "--dump-pages",
+                    "--no-download",
+                    "--cookies", str(cookies_path),
+                    "--no-warnings",
+                    url
+                ]
+                
+                logger.info("Fetching YouTube page to extract API parameters")
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    logger.error(f"Failed to fetch YouTube page: {result.stderr}")
+                    return []
+                
+                # Extract API key and client version
+                html = result.stdout
+                api_key_match = re.search(r'"INNERTUBE_API_KEY":"([^"]+)"', html)
+                client_version_match = re.search(r'"clientVersion":"([^"]+)"', html)
+                
+                if not api_key_match or not client_version_match:
+                    logger.error("Failed to extract API parameters")
+                    return []
+                
+                api_key = api_key_match.group(1)
+                client_version = client_version_match.group(1)
+                
+                # Now make a direct API request
+                import requests
+                
+                api_url = f"https://www.youtube.com/youtubei/v1/browse?key={api_key}"
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-YouTube-Client-Name": "1",
+                    "X-YouTube-Client-Version": client_version,
+                }
+                
+                # Extract cookies from cookies.txt
+                cookies = {}
+                with open(cookies_path, 'r') as f:
+                    for line in f:
+                        if not line.startswith('#') and line.strip():
+                            fields = line.strip().split('\t')
+                            if len(fields) >= 7:
+                                cookies[fields[5]] = fields[6]
+                
+                data = {
+                    "context": {
+                        "client": {
+                            "clientName": "WEB",
+                            "clientVersion": client_version,
+                        }
+                    },
+                    "browseId": "FEchannels"
+                }
+                
+                logger.info("Making YouTube API request")
+                response = requests.post(api_url, json=data, headers=headers, cookies=cookies)
+                
+                if response.status_code != 200:
+                    logger.error(f"API request failed: {response.status_code}")
+                    return []
+                
+                try:
+                    data = response.json()
+                    channels = []
+                    channel_ids = set()
+                    
+                    # Parse the response to extract channel information
+                    tabs = data.get("contents", {}).get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+                    for tab in tabs:
+                        if "tabRenderer" not in tab:
+                            continue
+                            
+                        content = tab["tabRenderer"].get("content", {})
+                        if "sectionListRenderer" not in content:
+                            continue
+                            
+                        for section in content["sectionListRenderer"].get("contents", []):
+                            if "itemSectionRenderer" not in section:
+                                continue
+                                
+                            for item in section["itemSectionRenderer"].get("contents", []):
+                                if "gridRenderer" not in item.get("shelfRenderer", {}).get("content", {}):
+                                    continue
+                                    
+                                grid = item["shelfRenderer"]["content"]["gridRenderer"]
+                                for grid_item in grid.get("items", []):
+                                    if "gridChannelRenderer" not in grid_item:
+                                        continue
+                                        
+                                    channel = grid_item["gridChannelRenderer"]
+                                    channel_id = channel.get("channelId")
+                                    
+                                    if not channel_id or channel_id in channel_ids or not channel_id.startswith("UC"):
+                                        continue
+                                        
+                                    channel_ids.add(channel_id)
+                                    title = channel.get("title", {}).get("simpleText", "Unknown Channel")
+                                    
+                                    # Get the best quality thumbnail
+                                    thumbnail_url = None
+                                    if "thumbnail" in channel and "thumbnails" in channel["thumbnail"]:
+                                        thumbnails = channel["thumbnail"]["thumbnails"]
+                                        if thumbnails:
+                                            thumbnail_url = thumbnails[-1].get("url")
+                                    
+                                    if not thumbnail_url:
+                                        thumbnail_url = f"https://yt3.googleusercontent.com/channel/{channel_id}"
+                                    
+                                    channels.append({
+                                        "id": channel_id,
+                                        "title": title,
+                                        "thumbnail_url": thumbnail_url,
+                                        "description": channel.get("descriptionSnippet", {}).get("simpleText", "")
+                                    })
+                    
+                    if channels:
+                        logger.info(f"Found {len(channels)} channels using API")
+                        return channels
+                    
+                except Exception as e:
+                    logger.error(f"Error parsing API response: {str(e)}")
+                    return []
+                
+                return []
+            
+            return await loop.run_in_executor(None, extract_subs)
+            
+        except Exception as e:
+            logger.error(f"Error in _get_subscriptions_from_api: {str(e)}")
             return [] 

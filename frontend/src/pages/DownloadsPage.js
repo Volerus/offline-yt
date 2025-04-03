@@ -33,7 +33,7 @@ import AddLinkIcon from '@mui/icons-material/AddLink';
 import useDownloadedVideos from '../hooks/useDownloadedVideos';
 import useDownload from '../hooks/useDownload';
 import { formatDuration } from '../utils/formatters';
-import { downloadVideoByUrl } from '../services/api';
+import { downloadVideoByUrl, API_BASE_URL } from '../services/api'; // Import API_BASE_URL
 
 const DownloadsPage = () => {
   const { videos, isLoading, error, deleteVideo, isDeletingVideo } = useDownloadedVideos();
@@ -303,7 +303,7 @@ const DownloadsPage = () => {
                 width="100%"
                 controls
                 autoPlay
-                src={`/api/downloads/${playingVideo.id}`}
+                src={`${API_BASE_URL}/downloads/${playingVideo.id}`} // Use absolute URL
                 controlsList="nodownload"
                 onError={(e) => console.error("Video error:", e)}
               >
@@ -314,7 +314,7 @@ const DownloadsPage = () => {
                 <Button 
                   variant="contained" 
                   color="primary"
-                  href={`/api/downloads/${playingVideo.id}`}
+                  href={`${API_BASE_URL}/downloads/${playingVideo.id}`} // Use absolute URL
                   target="_blank"
                   rel="noopener noreferrer"
                 >

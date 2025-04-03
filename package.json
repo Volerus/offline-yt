@@ -1,0 +1,44 @@
+{
+  "name": "offline_yt",
+  "version": "1.0.0",
+  "description": "A full-stack application for managing YouTube video downloads and offline viewing, built with FastAPI, React, and SQLite.",
+  "main": "electron-main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "electron-start": "electron .",
+    "electron-pack": "electron-builder"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Volerus/offline-yt.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Volerus/offline-yt/issues"
+  },
+  "homepage": "https://github.com/Volerus/offline-yt#readme",
+  "devDependencies": {
+    "electron": "^35.1.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.example.offlineyt",
+    "productName": "OfflineYT",
+    "files": [
+      "electron-main.js",
+      "frontend/build/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/run",
+        "to": "run"
+      }
+    ],
+    "mac": {
+      "target": "dmg"
+    }
+  }
+}
