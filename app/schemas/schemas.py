@@ -48,6 +48,7 @@ class UserSettingsBase(BaseModel):
     default_resolution: str = "720p"
     max_concurrent_downloads: int = 2
     auto_update_interval: int = 24  # Hours
+    dark_mode: bool = False
 
 class UserSettingsUpdate(UserSettingsBase):
     pass

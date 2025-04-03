@@ -119,7 +119,12 @@ async def get_videos(
     offset: int = 0,
     session: AsyncSession = Depends(get_session)
 ):
-    """Get videos with optional filters"""
+    """
+    Get videos with optional filters.
+    
+    Note: When is_downloaded=true, date filters (start_date/end_date) will filter by download date (downloaded_at).
+    Otherwise, they filter by publication date (published_at).
+    """
     # Process date parameters
     if days and not start_date:
         start_date = datetime.utcnow() - timedelta(days=days)

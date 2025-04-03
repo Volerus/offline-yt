@@ -48,6 +48,7 @@ class UserSettings(Base):
     default_resolution = Column(String, default="720p")
     max_concurrent_downloads = Column(Integer, default=2)
     auto_update_interval = Column(Integer, default=24)  # Hours
+    dark_mode = Column(Boolean, default=False)  # Dark mode setting
     oauth_token = Column(Text)
     oauth_token_expiry = Column(DateTime)
     last_updated = Column(DateTime, default=datetime.utcnow) 

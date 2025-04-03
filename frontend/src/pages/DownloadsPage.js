@@ -25,18 +25,34 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Pagination,
+  Paper,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CloseIcon from '@mui/icons-material/Close';
 import AddLinkIcon from '@mui/icons-material/AddLink';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import ClearIcon from '@mui/icons-material/Clear';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { format, subDays } from 'date-fns';
 import useDownloadedVideos from '../hooks/useDownloadedVideos';
 import useDownload from '../hooks/useDownload';
 import { formatDuration } from '../utils/formatters';
 import { downloadVideoByUrl, API_BASE_URL } from '../services/api'; // Import API_BASE_URL
 
 const DownloadsPage = () => {
-  const { videos, isLoading, error, deleteVideo, isDeletingVideo } = useDownloadedVideos();
+  const [page, setPage] = useState(1);
+  const pageSize = 10; // Fixed page size of 10
+  
+  // Date filter state
+  const [dateRange, setDateRange] = useState(null);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  
+  const { videos, totalCount, totalPages, isLoading, error, deleteVideo, isDeletingVideo } = useDownloadedVideos(page, pageSize, dateRange);
   const { downloads, isDownloading } = useDownload();
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [playingVideo, setPlayingVideo] = useState(null);
@@ -58,6 +74,58 @@ const DownloadsPage = () => {
     { value: '2160p', label: '2160p (4K)' },
     { value: 'best', label: 'Best Quality' },
   ];
+
+  // Available date filter presets
+  const dateFilterPresets = [
+    { label: 'Last 7 days', days: 7 },
+    { label: 'Last 30 days', days: 30 },
+    { label: 'Last 90 days', days: 90 },
+    { label: 'Custom range', days: null },
+  ];
+
+  // Handle page change
+  const handlePageChange = (event, newPage) => {
+    setPage(newPage);
+    window.scrollTo(0, 0);
+  };
+
+  // Apply date filter
+  const applyDateFilter = () => {
+    if (startDate || endDate) {
+      setDateRange({
+        startDate: startDate,
+        endDate: endDate,
+      });
+      setPage(1); // Reset to first page
+    }
+  };
+
+  // Clear date filter
+  const clearDateFilter = () => {
+    setStartDate(null);
+    setEndDate(null);
+    setDateRange(null);
+    setPage(1); // Reset to first page
+  };
+
+  // Apply preset date filter
+  const applyPresetDateFilter = (days) => {
+    if (days) {
+      const end = new Date();
+      const start = subDays(end, days);
+      setStartDate(start);
+      setEndDate(end);
+      setDateRange({
+        startDate: start,
+        endDate: end,
+      });
+    } else {
+      // Custom range option selected, don't set anything yet
+      setStartDate(null);
+      setEndDate(null);
+    }
+    setPage(1); // Reset to first page
+  };
 
   // Function to handle video playback
   const handlePlayVideo = (video) => {
@@ -146,8 +214,20 @@ const DownloadsPage = () => {
             No Downloaded Videos
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-            You haven't downloaded any videos yet. Download videos from the Home page or use the Download by URL button below.
+            {dateRange ? 
+              "No videos found for the selected date range. Try a different date range or clear the filter." : 
+              "You haven't downloaded any videos yet. Download videos from the Home page or use the Download by URL button below."}
           </Typography>
+          {dateRange && (
+            <Button 
+              variant="outlined" 
+              startIcon={<ClearIcon />} 
+              onClick={clearDateFilter}
+              sx={{ mr: 2, mb: 2 }}
+            >
+              Clear Date Filter
+            </Button>
+          )}
           <Button
             variant="contained"
             startIcon={<AddLinkIcon />}
@@ -175,6 +255,81 @@ const DownloadsPage = () => {
               Download by URL
             </Button>
           </Box>
+          
+          {/* Date Filter Controls */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>Filter by Download Date</Typography>
+            
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>Quick Filters:</Typography>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                {dateFilterPresets.map((preset) => (
+                  <Chip
+                    key={preset.label}
+                    label={preset.label}
+                    onClick={() => applyPresetDateFilter(preset.days)}
+                    color={preset.days === null ? "primary" : "default"}
+                    variant="outlined"
+                  />
+                ))}
+                {dateRange && (
+                  <Chip
+                    label="Clear Filter"
+                    onClick={clearDateFilter}
+                    color="error"
+                    icon={<ClearIcon />}
+                  />
+                )}
+              </Stack>
+            </Box>
+            
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} sm={5}>
+                  <DatePicker
+                    label="Start Date"
+                    value={startDate}
+                    onChange={(newValue) => setStartDate(newValue)}
+                    renderInput={(params) => <TextField {...params} fullWidth size="small" />}
+                    maxDate={endDate || undefined}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={5}>
+                  <DatePicker
+                    label="End Date"
+                    value={endDate}
+                    onChange={(newValue) => setEndDate(newValue)}
+                    renderInput={(params) => <TextField {...params} fullWidth size="small" />}
+                    minDate={startDate || undefined}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={2}>
+                  <Button
+                    variant="contained"
+                    onClick={applyDateFilter}
+                    fullWidth
+                    startIcon={<FilterAltIcon />}
+                    disabled={!startDate && !endDate}
+                  >
+                    Apply
+                  </Button>
+                </Grid>
+              </Grid>
+            </LocalizationProvider>
+            
+            {dateRange && (
+              <Box sx={{ mt: 2 }}>
+                <Alert severity="info" icon={<FilterAltIcon />}>
+                  <Typography variant="body2">
+                    Showing videos downloaded between{' '}
+                    <strong>{startDate ? format(startDate, 'MMM d, yyyy') : 'any date'}</strong>
+                    {' '}and{' '}
+                    <strong>{endDate ? format(endDate, 'MMM d, yyyy') : 'any date'}</strong>
+                  </Typography>
+                </Alert>
+              </Box>
+            )}
+          </Paper>
 
           <Grid container spacing={3}>
             {videos.map((video) => (
@@ -253,138 +408,152 @@ const DownloadsPage = () => {
                     >
                       Play
                     </Button>
-                    <Box sx={{ flexGrow: 1 }} />
-                    <Tooltip title="Delete Video">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => handleOpenDeleteDialog(video)}
-                        disabled={isDeletingVideo}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
+                    <Button
+                      size="small"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleOpenDeleteDialog(video)}
+                      disabled={isDeletingVideo}
+                    >
+                      Delete
+                    </Button>
                   </CardActions>
                 </Card>
               </Grid>
             ))}
           </Grid>
+          
+          {/* Pagination control */}
+          {totalPages > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+              <Pagination 
+                count={totalPages} 
+                page={page} 
+                onChange={handlePageChange} 
+                color="primary" 
+                showFirstButton 
+                showLastButton
+              />
+            </Box>
+          )}
+          
+          {/* Display pagination info */}
+          {totalCount > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Showing {Math.min((page - 1) * pageSize + 1, totalCount)} - {Math.min(page * pageSize, totalCount)} of {totalCount} videos
+              </Typography>
+            </Box>
+          )}
         </Box>
       </>
     );
   };
 
   return (
-    <>
+    <Box>
       {renderContent()}
-
-      {/* Video Player Dialog */}
-      <Dialog
-        fullWidth
-        maxWidth="md"
-        open={!!playingVideo}
-        onClose={handleClosePlayer}
-      >
-        <DialogTitle>
-          {playingVideo?.title}
-          <IconButton
-            aria-label="close"
-            onClick={handleClosePlayer}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          {playingVideo && (
-            <Box sx={{ mt: 2 }}>
-              <video
-                ref={videoRef}
-                width="100%"
-                controls
-                autoPlay
-                src={`${API_BASE_URL}/downloads/${playingVideo.id}`} // Use absolute URL
-                controlsList="nodownload"
-                onError={(e) => console.error("Video error:", e)}
-              >
-                Your browser does not support the video tag.
-              </video>
-              {/* Fallback if HTML5 video controls don't work well */}
-              <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                <Button 
-                  variant="contained" 
-                  color="primary"
-                  href={`${API_BASE_URL}/downloads/${playingVideo.id}`} // Use absolute URL
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open in New Tab
-                </Button>
-              </Box>
-            </Box>
-          )}
-        </DialogContent>
-      </Dialog>
-
+      
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
       >
-        <DialogTitle>Delete Video</DialogTitle>
+        <DialogTitle>Confirm Deletion</DialogTitle>
         <DialogContent>
           <DialogContentText>
             Are you sure you want to delete "{selectedVideo?.title}"? This will remove the video file from your storage.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setDeleteDialogOpen(false)} color="primary">
+            Cancel
+          </Button>
           <Button 
             onClick={handleDeleteConfirm} 
             color="error" 
-            variant="contained"
             disabled={isDeletingVideo}
+            startIcon={isDeletingVideo ? <CircularProgress size={20} /> : <DeleteIcon />}
           >
-            {isDeletingVideo ? (
-              <>
-                <CircularProgress size={24} color="inherit" sx={{ mr: 1 }} />
-                Deleting...
-              </>
-            ) : 'Delete'}
+            {isDeletingVideo ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* URL Input Dialog */}
-      <Dialog open={urlInputDialogOpen} onClose={handleCloseUrlDialog}>
+      
+      {/* Video Player Dialog */}
+      <Dialog
+        open={playingVideo !== null}
+        onClose={handleClosePlayer}
+        maxWidth="lg"
+        fullWidth
+      >
+        {playingVideo && (
+          <>
+            <DialogTitle>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6" component="div" noWrap sx={{ flexGrow: 1, mr: 2 }}>
+                  {playingVideo.title}
+                </Typography>
+                <IconButton edge="end" color="inherit" onClick={handleClosePlayer} aria-label="close">
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+            </DialogTitle>
+            <DialogContent>
+              <Box sx={{ position: 'relative', width: '100%', pt: '56.25%' /* 16:9 aspect ratio */ }}>
+                <video
+                  ref={videoRef}
+                  controls
+                  autoPlay
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                  }}
+                  src={`${API_BASE_URL.replace('/api', '')}/downloads/${playingVideo.id}.mp4`}
+                  onError={(e) => {
+                    console.error('Video playback error:', e);
+                    // Try to use fallback video source if available
+                    const video = e.target;
+                    if (video.src.endsWith('.mp4')) {
+                      video.src = video.src.replace('.mp4', '.webm');
+                    }
+                  }}
+                />
+              </Box>
+            </DialogContent>
+          </>
+        )}
+      </Dialog>
+      
+      {/* Download from URL Dialog */}
+      <Dialog open={urlInputDialogOpen} onClose={handleCloseUrlDialog} maxWidth="sm" fullWidth>
         <DialogTitle>Download Video by URL</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Enter a YouTube video URL to download it.
-          </DialogContentText>
           <TextField
             autoFocus
             margin="dense"
             id="url"
-            label="YouTube URL"
+            label="YouTube Video URL"
             type="url"
             fullWidth
             variant="outlined"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://www.youtube.com/watch?v=..."
-            error={!!downloadError}
-            helperText={downloadError}
-            sx={{ mb: 2 }}
+            sx={{ mb: 2, mt: 1 }}
           />
-          <FormControl fullWidth>
+          
+          <FormControl fullWidth variant="outlined">
             <InputLabel id="resolution-select-label">Resolution</InputLabel>
             <Select
               labelId="resolution-select-label"
               id="resolution-select"
               value={selectedResolution}
-              label="Resolution"
               onChange={(e) => setSelectedResolution(e.target.value)}
+              label="Resolution"
             >
               {resolutionOptions.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
@@ -393,25 +562,29 @@ const DownloadsPage = () => {
               ))}
             </Select>
           </FormControl>
+          
+          {downloadError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {downloadError}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseUrlDialog}>Cancel</Button>
+          <Button onClick={handleCloseUrlDialog} color="primary">
+            Cancel
+          </Button>
           <Button 
             onClick={handleDownloadByUrl} 
             color="primary" 
             variant="contained"
-            disabled={!url || isDownloadingUrl}
+            disabled={isDownloadingUrl || !url}
+            startIcon={isDownloadingUrl ? <CircularProgress size={20} /> : null}
           >
-            {isDownloadingUrl ? (
-              <>
-                <CircularProgress size={24} color="inherit" sx={{ mr: 1 }} />
-                Downloading...
-              </>
-            ) : 'Download'}
+            {isDownloadingUrl ? 'Downloading...' : 'Download'}
           </Button>
         </DialogActions>
       </Dialog>
-    </>
+    </Box>
   );
 };
 

@@ -17,11 +17,16 @@ import {
   Tabs,
   Card,
   CardContent,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import BrowserUpdatedIcon from '@mui/icons-material/BrowserUpdated';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { useSettings } from '../context/SettingsContext';
+import { useTheme } from '../context/ThemeContext';
 import { uploadCookies, getAuthStatus, extractBrowserCookies } from '../services/api';
 
 const resolutionOptions = [
@@ -43,11 +48,13 @@ const browserOptions = [
 
 const SettingsPage = () => {
   const { settings, updateSettings, isLoading, error } = useSettings();
+  const { darkMode, toggleTheme } = useTheme();
   const [formValues, setFormValues] = React.useState({
     download_directory: 'downloads',
     default_resolution: '720p',
     max_concurrent_downloads: 2,
     auto_update_interval: 24,
+    dark_mode: false,
   });
   
   const [isSaving, setIsSaving] = React.useState(false);
@@ -72,12 +79,13 @@ const SettingsPage = () => {
         default_resolution: settings.default_resolution || '720p',
         max_concurrent_downloads: settings.max_concurrent_downloads || 2,
         auto_update_interval: settings.auto_update_interval || 24,
+        dark_mode: darkMode,
       });
     }
     
     // Fetch auth status
     fetchAuthStatus();
-  }, [settings]);
+  }, [settings, darkMode]);
   
   const fetchAuthStatus = async () => {
     try {
@@ -106,6 +114,7 @@ const SettingsPage = () => {
       ...formValues,
       max_concurrent_downloads: Number(formValues.max_concurrent_downloads),
       auto_update_interval: Number(formValues.auto_update_interval),
+      dark_mode: darkMode,
     };
     
     // Update settings
@@ -185,7 +194,7 @@ const SettingsPage = () => {
       setIsExtractingCookies(false);
     }
   };
-  
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', my: 5 }}>
@@ -217,10 +226,40 @@ const SettingsPage = () => {
       <Paper sx={{ p: 3, mb: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
+          
+            {/* UI Settings Section */}
+            <Grid item xs={12}>
+              <Typography variant="h6" gutterBottom>
+                UI Settings
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+            </Grid>
+            
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={darkMode}
+                    onChange={toggleTheme}
+                    name="dark_mode"
+                    color="primary"
+                  />
+                }
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    {darkMode ? <Brightness4Icon sx={{ mr: 1 }} /> : <Brightness7Icon sx={{ mr: 1 }} />}
+                    {darkMode ? 'Dark Mode' : 'Light Mode'}
+                  </Box>
+                }
+              />
+            </Grid>
+            
+            {/* Download Settings Section */}
             <Grid item xs={12}>
               <Typography variant="h6" gutterBottom>
                 Download Settings
               </Typography>
+              <Divider sx={{ mb: 2 }} />
             </Grid>
             
             <Grid item xs={12} md={6}>
@@ -257,10 +296,11 @@ const SettingsPage = () => {
                 fullWidth
                 type="number"
                 name="max_concurrent_downloads"
-                label="Maximum Concurrent Downloads"
+                label="Max Concurrent Downloads"
                 value={formValues.max_concurrent_downloads}
                 onChange={handleInputChange}
-                inputProps={{ min: 1, max: 10 }}
+                inputProps={{ min: 1, max: 5 }}
+                helperText="Maximum number of videos to download simultaneously"
               />
             </Grid>
             
@@ -272,19 +312,16 @@ const SettingsPage = () => {
                 label="Auto Update Interval (hours)"
                 value={formValues.auto_update_interval}
                 onChange={handleInputChange}
-                inputProps={{ min: 1, max: 168 }}
+                inputProps={{ min: 1 }}
                 helperText="How often to check for new videos"
               />
             </Grid>
             
             <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
-            </Grid>
-            
-            <Grid item xs={12}>
               <Button
-                type="submit"
                 variant="contained"
+                color="primary"
+                type="submit"
                 startIcon={<SaveIcon />}
                 disabled={isSaving}
               >

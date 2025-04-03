@@ -67,14 +67,30 @@ class DatabaseService:
         if channel_id:
             query = query.where(Video.channel_id == channel_id)
         
-        if start_date:
-            query = query.where(Video.published_at >= start_date)
-        
-        if end_date:
-            query = query.where(Video.published_at <= end_date)
-        
         if is_downloaded is not None:
             query = query.where(Video.is_downloaded == is_downloaded)
+            
+            # If we're filtering downloaded videos, filter by downloaded_at date
+            if is_downloaded is True:
+                if start_date:
+                    query = query.where(Video.downloaded_at >= start_date)
+                
+                if end_date:
+                    query = query.where(Video.downloaded_at <= end_date)
+            else:
+                # For non-downloaded videos, filter by published_at date
+                if start_date:
+                    query = query.where(Video.published_at >= start_date)
+                
+                if end_date:
+                    query = query.where(Video.published_at <= end_date)
+        else:
+            # No downloaded filter, use published_at date for filtering
+            if start_date:
+                query = query.where(Video.published_at >= start_date)
+            
+            if end_date:
+                query = query.where(Video.published_at <= end_date)
         
         result = await self.session.execute(query)
         return result.scalars().all()
@@ -92,14 +108,30 @@ class DatabaseService:
         if channel_id:
             query = query.where(Video.channel_id == channel_id)
         
-        if start_date:
-            query = query.where(Video.published_at >= start_date)
-        
-        if end_date:
-            query = query.where(Video.published_at <= end_date)
-        
         if is_downloaded is not None:
             query = query.where(Video.is_downloaded == is_downloaded)
+            
+            # If we're filtering downloaded videos, filter by downloaded_at date
+            if is_downloaded is True:
+                if start_date:
+                    query = query.where(Video.downloaded_at >= start_date)
+                
+                if end_date:
+                    query = query.where(Video.downloaded_at <= end_date)
+            else:
+                # For non-downloaded videos, filter by published_at date
+                if start_date:
+                    query = query.where(Video.published_at >= start_date)
+                
+                if end_date:
+                    query = query.where(Video.published_at <= end_date)
+        else:
+            # No downloaded filter, use published_at date for filtering
+            if start_date:
+                query = query.where(Video.published_at >= start_date)
+            
+            if end_date:
+                query = query.where(Video.published_at <= end_date)
         
         result = await self.session.execute(query)
         return result.scalar()
